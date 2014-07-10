@@ -22,10 +22,10 @@ class Classifier( object ):
     def predictProbabilities( self, data ):
         pass
 
-    def writeToHdf5( self, filePath, pathInFile ):
+    def save( self, filePath, pathInFile ):
         pass
 
-    def readFromHdf5( self, filePath, pathInFile ):
+    def load( self, filePath, pathInFile ):
         pass
 
 
@@ -47,10 +47,10 @@ class RandomForest( Classifier ):
     def predictProbabilities( self, data ):
         return self.rf.predictProbabilities( data )
 
-    def writeToHdf5( self, filePath, pathInFile ):
+    def save( self, filePath, pathInFile ):
         self.rf.writeHDF5( filePath, pathInFile )
 
-    def readFromHdf5( self, filePath, pathInFile ):
+    def load( self, filePath, pathInFile ):
         self.rf = vigra.learning.RandomForest( filePath, pathInFile )
 
 
