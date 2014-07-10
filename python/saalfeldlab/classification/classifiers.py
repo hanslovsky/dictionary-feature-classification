@@ -38,7 +38,6 @@ class RandomForest( Classifier ):
         self.oob = None
 
     def train( self, data, labels ):
-        print data.dtype, data.shape, labels.dtype, labels.shape
         self.oob = self.rf.learnRF( data, labels ) #, int ( self.seed ) )
         return self
 
