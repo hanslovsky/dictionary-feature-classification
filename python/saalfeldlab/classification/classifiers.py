@@ -3,6 +3,7 @@ import numpy as np
 import vigra
 
 from sklearn import svm
+from sklearn.externals import joblib
 
 import h5py
 
@@ -71,18 +72,8 @@ class SVM( object ):
     def predictProbabilities( self, data ):
         return self.predictLabels( data )
 
-    def writeToHdf5( self, filePath, pathInFile ):
-        with h5py.File( filePath, 'w-' ) as f:
-            group  = f.create_group( pathInFile )
-            params = self.classifier.get_params( deep = False )
-            for p, v in params.iteritems():
-                group.create_dataset( p, data = np.array( v ) )
-
-    def readFromHdf5( self, filePath, pathInFile ):
-        params = {}
-        with h5py.File( FilePath, 'r' ) as f:
-            group = f[ pathInFile ]
-            for p in group.keys():
-                params[p] = group[p][...]
-
-        self.classifier.set_params( **params )
+    def save( self, filePath, pathInFile ):
+        joblib.dump( self.classifier, filePath )
+    
+    def load( self, filePath, pathInFile ):
+        self.classifier = joblib.load( filePath )
