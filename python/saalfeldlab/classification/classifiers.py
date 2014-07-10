@@ -20,6 +20,9 @@ class Classifier( object ):
     def writeToHdf5( self, filePath, pathInFile ):
         pass
 
+    def readFromHdf5( self, filePath, pathInFile ):
+        pass
+
 
 class RandomForest( Classifier ):
     
