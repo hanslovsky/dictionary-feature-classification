@@ -1,5 +1,10 @@
 import numpy as np
+
 import vigra
+
+from sklearn import svm
+
+import h5py
 
 
 
@@ -44,3 +49,40 @@ class RandomForest( Classifier ):
 
     def writeToHdf5( self, filePath, pathInFile ):
         self.rf.writeHDF5( filePath, pathInFile )
+
+    def readFromHdf5( self, filePath, pathInFile ):
+        self.rf = vigra.learning.RandomForest( filePath, pathInFile )
+
+
+
+class SVM( object ):
+
+    def __init__( self, **kwargs ):
+        self.kwargs = kwargs
+        self.classifier = svm.SVC()
+
+    def train( self, data, labels ):
+        self.classifier.fit( data, labels.flat )
+        return self
+
+    def predictLabels( self, data ):
+        return self.classifier.predict( data )[ :, np.newaxis ]
+
+    def predictProbabilities( self, data ):
+        return self.predictLabels( data )
+
+    def writeToHdf5( self, filePath, pathInFile ):
+        with h5py.File( filePath, 'w-' ) as f:
+            group  = f.create_group( pathInFile )
+            params = self.classifier.get_params( deep = False )
+            for p, v in params.iteritems():
+                group.create_dataset( p, data = np.array( v ) )
+
+    def readFromHdf5( self, filePath, pathInFile ):
+        params = {}
+        with h5py.File( FilePath, 'r' ) as f:
+            group = f[ pathInFile ]
+            for p in group.keys():
+                params[p] = group[p][...]
+
+        self.classifier.set_params( **params )
