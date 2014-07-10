@@ -75,7 +75,6 @@ class DataHandler( object ):
 
 
 
-
 if __name__ == "__main__":
 
     handler = DataHandler( "/nobackup/saalfeld/john/forPhilipp/testFeatures.h5", np.float32 )
