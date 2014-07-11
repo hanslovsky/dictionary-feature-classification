@@ -56,7 +56,6 @@ class RandomForest( Classifier ):
         self.rf = vigra.learning.RandomForest( filePath, pathInFile )
 
 
-
 class SVM( Classifier ):
 
     def __init__( self, **kwargs ):
