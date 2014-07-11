@@ -40,6 +40,8 @@ class RandomForest( Classifier ):
         if 'randomSeed' in kwargs.keys():
             self.seed = kwargs[ 'randomSeed' ]
             del kwargs['randomSeed']
+        else:
+            self.seed = 10
         self.rf = vigra.learning.RandomForest( **kwargs )
         self.oob = None
 
