@@ -35,7 +35,7 @@ class RandomForest( Classifier ):
     def __init__( self, **kwargs ):
         if 'randomSeed' in kwargs.keys():
             self.seed = kwargs[ 'randomSeed' ]
-        del kwargs['randomSeed']
+            del kwargs['randomSeed']
         self.rf = vigra.learning.RandomForest( **kwargs )
         self.oob = None
 
