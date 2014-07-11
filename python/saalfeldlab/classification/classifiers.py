@@ -4,6 +4,7 @@ import vigra
 
 from sklearn import svm
 from sklearn.externals import joblib
+from sklearn import naive_bayes
 
 import h5py
 
@@ -56,7 +57,6 @@ class RandomForest( Classifier ):
         self.rf = vigra.learning.RandomForest( filePath, pathInFile )
 
 
-
 class SVM( Classifier ):
 
     def __init__( self, **kwargs ):
@@ -76,5 +76,28 @@ class SVM( Classifier ):
     def save( self, filePath, pathInFile ):
         joblib.dump( self.classifier, filePath )
     
+    def load( self, filePath, pathInFile ):
+        self.classifier = joblib.load( filePath )
+
+
+class GaussianNaiveBayes( Classifier ):
+
+    def __init__( self, **kwargs ):
+        self.kwargs = kwargs
+        self.classifier = naive_bayes.GaussianNB( **self.kwargs )
+
+    def train( self, data, labels ):
+        self.classifier.fit( data, labels.flat )
+        return self
+
+    def predictLabels( self, data ):
+        return self.classifier.predict( data )[ :, np.newaxis ]
+
+    def predictProbabilities( self, data ):
+        return self.classifier.predict_proba( data )
+
+    def save( self, filePath, pathInFile ):
+        joblib.dump( self.classifier, filePath )
+
     def load( self, filePath, pathInFile ):
         self.classifier = joblib.load( filePath )
