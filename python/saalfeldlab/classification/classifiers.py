@@ -55,7 +55,7 @@ class RandomForest( Classifier ):
 
 
 
-class SVM( object ):
+class SVM( Classifier ):
 
     def __init__( self, **kwargs ):
         self.kwargs = kwargs
