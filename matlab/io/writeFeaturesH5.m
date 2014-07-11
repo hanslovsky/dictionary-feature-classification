@@ -28,29 +28,42 @@ try
     % write the features for this label
     for l = 1:length(labelList)
         
+        
         if( iscell(feats))
             writeme = feats{l};
+            
+            if( issparse( writeme) )
+                writeme = full( writeme );
+            end
+            
             if( ~isa( writeme, 'single') )
                 fprintf('converting to float32\n');
                 writeme = single(writeme);
             end
+            
+            szLabel = size(writeme);
         else
-            idxs = labels == labelList(l);
+            idxs = (labels == labelList(l));
             N = nnz( idxs );
             szLabel = [ N sz(2) ];
             writeme = feats( idxs, :);
         end
-
-        datasetString = sprintf('/labels/%d', labelList(l));
-        h5create(fn, datasetString, szLabel, ...
-                    'datatype', 'single', ...
-                    'fillvalue', single(0));
         
-        h5write( fn, datasetString, writeme' );
+        
+        datasetString = sprintf('/labels/%d', labelList(l));
+        blcksz=ceil(szLabel.*ones(1,length(szLabel)).*0.3);
+        h5create(fn, datasetString, szLabel, ...
+            'datatype', 'single', ...
+            'chunksize', blcksz, ...
+            'deflate', 9, ...
+            'fillvalue', single(0));
+        
+        
+        h5write( fn, datasetString, writeme );
     end
     
   else
-     error('file exists ... exiting');
+      error('file exists ... exiting');
   end
   
 catch e

@@ -27,3 +27,13 @@ feats = getTrainTestData( ds.data_fn{1}, ds.labels_fn{1}, ds.mask_fn{1}, ...
                             N, D, patch_size, param );
 
 success = writeFeaturesH5( feats, [], '/nobackup/saalfeld/john/forPhilipp/ds_18_dict1k.h5' );
+
+%%
+
+sample_dir = '/groups/saalfeld/home/bogovicj/dev/dawmr/dawmr_lib_public/projects/sample_medulla/';
+data_fn_samp = fullfile(sample_dir, 'medulla_sub1_data.h5');
+
+feats = getTrainTestData( data_fn_samp, [], [], ...
+                            [], D, patch_size, param );
+                        
+success = writeFeaturesH5( feats, [], '/nobackup/saalfeld/john/forPhilipp/ds_tst3_dict1k.h5' );
