@@ -10,6 +10,9 @@ class DataHandler( object ):
         self.filename = filename
         self.dtype    = dtype
 
+        self.mean     = None
+        self.var      = None
+
     def createFeatureMatrixAndLabelVector( self ):
         with h5py.File( self.filename, 'r' ) as f:
             if not DataHandler.LABEL_PATH in f.keys():
@@ -60,6 +63,43 @@ class DataHandler( object ):
                 currentStart += step
 
             return featureMatrix, labelVector
+
+
+    def normalizeData( self, data ):
+        if self.mean is None:
+            self.mean = np.mean( data, axis = DataHandler.SAMPLE_AXIS )
+        if self.var is None:
+            self.var  = np.var( data,  axis = DataHandler.SAMPLE_AXIS )
+
+        # this works only if SAMPLE_AXIS == 0
+
+        return ( data - self.mean ) / self.var
+
+    def save( self, fileName, pathInFile ):
+        with h5py.File( fileName, 'a' ) as f:
+            if pathInFile in f.keys():
+                del f[ pathInFile ]
+            dg = f.create_group( pathInFile )
+            for member in dir( self ):
+                value = getattr( self, member )
+                if callable( value ) or member.startswith( '__' ) or member[0].isupper() or member == 'dtype':
+                    continue
+                if value is None:
+                    dg.create_dataset( name = member, shape=(1,) )
+                    dg.attrs[ 'None' ] = [ 'True' ]
+                else:
+                    dg.create_dataset( name = member, data = value )
+
+
+
+    def load( self, fileName, pathInFile ):
+        with h5py.File( fileName, 'r' ) as f:
+            dg = f[ pathInFile ]
+            for member in dg.keys():
+                if 'None' in dg[member].attrs.keys():
+                    setattr( self, member, None )
+                else:
+                    setattr( self, member, dg[member].value )
                 
                   
 
