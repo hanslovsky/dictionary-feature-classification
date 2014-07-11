@@ -1,8 +1,11 @@
+import os
+import sys
+sys.path.append( os.path.dirname( os.path.realpath( __file__ ) ) )
+
 from classification import *
 import numpy as np
 import vigra
 import itertools
-import sys
 import inspect
 import argparse
 import ast
