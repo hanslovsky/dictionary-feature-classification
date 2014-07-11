@@ -54,4 +54,7 @@ docs/_build/
 
 # temp files
 *~
+
+# data
 *.h5
+*.npy
