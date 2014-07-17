@@ -1,5 +1,9 @@
 import h5py
 import numpy as np
+import fnmatch
+import os
+import os.path
+
 
 class DataHandler( object ):
     LABEL_PATH   = 'labels'
@@ -7,23 +11,54 @@ class DataHandler( object ):
     FEATURE_AXIS = 1
     
     def __init__(self, filename, dtype ):
-        self.filename = filename
-        self.dtype    = dtype
+        if ( os.path.isdir( filename )):
+           self.dirname  = filename
+           self.filename = "" 
+        else:
+           self.filename = filename
 
+        self.dtype    = dtype
         self.mean     = None
         self.var      = None
 
-    def createFeatureMatrixAndLabelVector( self ):
+    def createFeatureMatrixAndLabelVector( self, enforce_labels = 1 ):
+        if ( self.filename ):
+			# we have a file, not a directory
+            return self.createFeatureMatrixAndLabelVectorFile( enforce_labels )
+        else:
+			# we have a directory of h5's
+			self.filename = ""
+			data   = np.array([]) 
+			labels = np.array([])
+			print "data is", repr(data)
+			for f in os.listdir( self.dirname ):
+				if fnmatch.fnmatch(f, '*.h5'):  
+					self.filename = self.dirname + os.sep + f 
+					print self.filename
+					thesedata,theselabels = self.createFeatureMatrixAndLabelVectorFile( enforce_labels )
+
+					print thesedata.shape
+					print theselabels.shape
+					if (data.size):	
+						data = np.append( data, thesedata, axis=self.SAMPLE_AXIS)
+						labels = np.append( labels, theselabels, axis=self.SAMPLE_AXIS)
+					else:
+						data   = thesedata;
+						labels = theselabels;
+
+			self.filename = ""
+			return data, labels
+
+    def createFeatureMatrixAndLabelVectorFile( self, enforce_labels = 1 ):
         with h5py.File( self.filename, 'r' ) as f:
             if not DataHandler.LABEL_PATH in f.keys():
-                raise FileFormatException( "Label path %s not present in %s." % ( LABEL_PATH, self.filename ) )
+                raise self.FileFormatException( "Label path %s not present in %s." % ( self.LABEL_PATH, self.filename ) )
 
             labelDir  = f[ DataHandler.LABEL_PATH ]
             keys      = sorted( labelDir.keys(), key = lambda x: int( x ) )
             nSamples  = 0
             nFeatures = None
             
-
             # check for consistency and get size of features
             for idx, label in enumerate( keys ):
                 data = labelDir[ label ]
@@ -31,10 +66,10 @@ class DataHandler( object ):
                     nFeatures = data.shape[ DataHandler.FEATURE_AXIS ]
                 else:
                     if not nFeatures == data.shape[ DataHandler.FEATURE_AXIS ]:
-                        raise DataInconsistencyException
+                        raise self.DataInconsistencyException
 
-                if not int(label) == idx + 1:
-                    raise LabelInconsistencyException( "Labels not following 1,2,..." )
+                if ( enforce_labels and not (int(label) == idx + 1) ):
+                    raise self.LabelInconsistencyException( "Labels not following 1,2,..." )
 
                 nSamples += data.shape[ DataHandler.SAMPLE_AXIS ]
 
@@ -58,7 +93,8 @@ class DataHandler( object ):
                 slicing[ DataHandler.SAMPLE_AXIS ] = slice( currentStart, currentStart + step )
 
                 featureMatrix[ slicing ] = data[...]
-                labelVector[ slicing[ DataHandler.SAMPLE_AXIS ], 0 ] = np.zeros( step ) + idx # int( label )
+                #labelVector[ slicing[ DataHandler.SAMPLE_AXIS ], 0 ] = np.zeros( step ) + idx # int( label )
+                labelVector[ slicing[ DataHandler.SAMPLE_AXIS ], 0 ] = np.zeros( step ) + int( label ) - 1 
 
                 currentStart += step
 
