@@ -21,10 +21,10 @@ class DataHandler( object ):
         self.mean     = None
         self.var      = None
 
-    def createFeatureMatrixAndLabelVector( self, enforce_labels = 1 ):
+    def createFeatureMatrixAndLabelVector( self ):
         if ( self.filename ):
 			# we have a file, not a directory
-            return self.createFeatureMatrixAndLabelVectorFile( enforce_labels )
+            return self.createFeatureMatrixAndLabelVectorFile( 1 )
         else:
 			# we have a directory of h5's
 			self.filename = ""
@@ -34,11 +34,7 @@ class DataHandler( object ):
 			for f in os.listdir( self.dirname ):
 				if fnmatch.fnmatch(f, '*.h5'):  
 					self.filename = self.dirname + os.sep + f 
-					print self.filename
-					thesedata,theselabels = self.createFeatureMatrixAndLabelVectorFile( enforce_labels )
-
-					print thesedata.shape
-					print theselabels.shape
+					thesedata,theselabels = self.createFeatureMatrixAndLabelVectorFile( 0 )
 					if (data.size):	
 						data = np.append( data, thesedata, axis=self.SAMPLE_AXIS)
 						labels = np.append( labels, theselabels, axis=self.SAMPLE_AXIS)
