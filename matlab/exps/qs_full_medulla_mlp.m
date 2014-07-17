@@ -4,24 +4,27 @@
 % cd ~/dev/main/dictionary-feature-classification/matlab/exps/
 %
 % dbstop if error; run_script('qs_full_medulla_mlp','dictionary only, 2k clusters');
+% dbstop if error; run_script('qs_full_medulla_mlp','dictionary only, downsampZ 3, patch[9 9 3], 1k clusters');
+% dbstop if error; run_script('qs_full_medulla_mlp','dictionary only, downsampZ 3, patch[9 9 3], 2k clusters');
+%
 % dbstop if error; run_script('qs_full_medulla_mlp','mlp100, 1k clust');
-
 
 global SAVEPATH
 global SAVEPREFIX
-global DAWMRLIBPATH
 
 %% exp params
 
-saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0080_qs_full_medulla_mlp/exp0080_qs_full_medulla_mlp_learnedFeatures.mat';
+% saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0080_qs_full_medulla_mlp/exp0080_qs_full_medulla_mlp_learnedFeatures.mat';
+saved_dict_fn = '';
 
-do_classifier   = 1;
+do_classifier   = 0;
+use_downsampled = 1;
+factor = [1 1 3];
 
 num_workers = 50;
 
 num_training_patches = 25000;
 num_testing_patches  = 5000;
-dict_iters = 200;
 
 %% define the data set
 
@@ -29,16 +32,52 @@ training = 18;
 test = 3;
 ds = ds_medulla(training, test);
 
+data_fn_train = ds.data_fn{1};
+data_fn_test  = ds.data_fn{3};
+
+mask_fn_train = ds.mask_fn{1};
+mask_fn_test  = ds.mask_fn{3};
+
+labels_fn_train = ds.labels_fn{1};
+labels_fn_test  = ds.labels_fn{3};
+
+datdir = '/groups/saalfeld/home/bogovicj/projects/aniso/downsamp/medulla/dsdat';
+[~,trnVolName] = fileparts( data_fn_train );
+[~,tstVolName] = fileparts( data_fn_test );
+trnVolDsFn = fullfile(datdir, sprintf('trn_%s_ds%d-%d-%d.h5',trnVolName,factor));
+tstVolDsFn = fullfile(datdir, sprintf('tst_%s_ds%d-%d-%d.h5',tstVolName,factor));
+
+[~,trnMskName] = fileparts( mask_fn_train );
+[~,tstMskName] = fileparts( mask_fn_test );
+trnMskDsFn = fullfile(datdir, sprintf('trn_%s_ds%d-%d-%d.h5',trnMskName,factor));
+tstMskDsFn = fullfile(datdir, sprintf('tst_%s_ds%d-%d-%d.h5',tstMskName,factor));
+
+[~,trnLabName] = fileparts( labels_fn_train );
+[~,tstLabName] = fileparts( labels_fn_test );
+trnLabDsFn = fullfile(datdir, sprintf('trn_%s_ds%d-%d-%d.h5',trnLabName,factor));
+tstLabDsFn = fullfile(datdir, sprintf('tst_%s_ds%d-%d-%d.h5',tstLabName,factor));
+
+if ( use_downsampled )
+    ds = dawmr_set( { trnVolDsFn,   '', tstVolDsFn   }, ...
+                    { trnLabDsFn, '', tstLabDsFn }, ...
+                    { trnMskDsFn,   '', tstMskDsFn   }, ...
+                    trnVolDsFn );
+end
+
+ds.data_fn{1}
+ds.data_fn{3}
+
+
 %% specify unsupervised architecture
 c_thresh_pol_kmeans = 3;
 c_ave_pooling       = 0;
 c_max_pooling       = 1;
-patch_dim           = [9 9 9]
+patch_dim           = [9 9 3]
 
 pooling_radius      = 2;
 pooling_type        = c_max_pooling;
 
-num_clusters        = 2000;
+num_clusters        = 1000;
 num_patches_kmeans  = 10000;
 num_train_instances = Inf;
 num_test_instances  = Inf;
