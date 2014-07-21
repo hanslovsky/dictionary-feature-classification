@@ -8,17 +8,23 @@
 % dbstop if error; run_script('qs_full_medulla_mlp','dictionary only, downsampZ 3, patch[9 9 3], 2k clusters');
 %
 % dbstop if error; run_script('qs_full_medulla_mlp','mlp100, 1k clust');
+% dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-3');
+%
+% dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-3 dsTo 9-9-3');
+
 
 global SAVEPATH
 global SAVEPREFIX
 
 %% exp params
 
-% saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0080_qs_full_medulla_mlp/exp0080_qs_full_medulla_mlp_learnedFeatures.mat';
-saved_dict_fn = '';
+saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0080_qs_full_medulla_mlp/exp0080_qs_full_medulla_mlp_learnedFeatures.mat';
+% saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0084_qs_full_medulla_mlp/exp0084_qs_full_medulla_mlp_learnedFeatures.mat';
+% saved_dict_fn = '';
 
-do_classifier   = 0;
+do_classifier   = 1;
 use_downsampled = 1;
+downsample_dict = 1;
 factor = [1 1 3];
 
 num_workers = 50;
@@ -124,9 +130,13 @@ else
     load( saved_dict_fn );
 end
 
+if( downsample_dict )
+    dm = resampleDawmrClusters( dm, factor );
+    dm.dds.dcs
+end
 
 if( do_classifier )
-    
+    ts = tic;
     % train 
     [accs_train, labels_gt_train, ~, labels_pd_train] = ...
         dm.classifier(1, num_train_instances, ...
