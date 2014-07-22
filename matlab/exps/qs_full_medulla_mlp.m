@@ -8,9 +8,12 @@
 % dbstop if error; run_script('qs_full_medulla_mlp','dictionary only, downsampZ 3, patch[9 9 3], 2k clusters');
 %
 % dbstop if error; run_script('qs_full_medulla_mlp','mlp100, 1k clust');
-% dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-3');
+% dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-3, foveated');
 %
 % dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-3 dsTo 9-9-3');
+%
+% dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-3, maxPool-[2 2 1]');
+% dbstop if error; run_script('qs_full_medulla_mlp','ds3, mlp100, 1k clust 9-9-9HR dsTo 9-9-3, maxPool-[2 2 1]');
 
 
 global SAVEPATH
@@ -19,13 +22,17 @@ global SAVEPREFIX
 %% exp params
 
 saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0080_qs_full_medulla_mlp/exp0080_qs_full_medulla_mlp_learnedFeatures.mat';
-% saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0084_qs_full_medulla_mlp/exp0084_qs_full_medulla_mlp_learnedFeatures.mat';
+%saved_dict_fn = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0084_qs_full_medulla_mlp/exp0084_qs_full_medulla_mlp_learnedFeatures.mat';
 % saved_dict_fn = '';
 
 do_classifier   = 1;
 use_downsampled = 1;
 downsample_dict = 1;
 factor = [1 1 3];
+
+do_foveated = 1;
+do_cn       = 0;
+
 
 num_workers = 50;
 
@@ -75,13 +82,17 @@ ds.data_fn{3}
 
 
 %% specify unsupervised architecture
+
+alphas    = 0;
+
 c_thresh_pol_kmeans = 3;
 c_ave_pooling       = 0;
 c_max_pooling       = 1;
-patch_dim           = [9 9 3]
+patch_dim           = [9 9 3];
 
-pooling_radius      = 2;
-pooling_type        = c_max_pooling;
+encoding_type      = c_thresh_pol_kmeans;
+pooling_radius     = [2 2 1];
+pooling_type       = c_max_pooling;
 
 num_clusters        = 1000;
 num_patches_kmeans  = 10000;
@@ -91,11 +102,18 @@ num_test_instances  = Inf;
 feature_normalization = 3;
 % feature_normalization = 0;
 
-dc = dawmr_clustering(patch_dim, num_clusters);
-dp_cen  = dawmr_pooling(pooling_type, 0, [0 0 0]);
-dc.add_dp(dp_cen);
+if (do_foveated)
+    dc = dawmr_clustering(patch_dim, num_clusters, do_cn, ...
+        [], [],[],[], [],[], 0);
+    dc = dc_foveated(dc, pooling_radius, pooling_type, encoding_type );
+else
+    dc = dawmr_clustering(patch_dim, num_clusters);
+    dp_cen  = dawmr_pooling(pooling_type, 0, [0 0 0]);
+    dc.add_dp(dp_cen);
+end
 
 downsampling_type = 1;
+
 
 %% specify mlp parameters
 
