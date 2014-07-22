@@ -19,7 +19,6 @@ if __name__ == "__main__":
     parser.add_argument( '--classifier-path', '-p', required=True, type=str, help='Internal path for classifier.' )
     parser.add_argument( '--data', '-d', required=True, type=str, help='Path to training data (hdf5).' )
     parser.add_argument( '--data-type', '-t', default='f4', type=str, help='Datatype used for classifier.' )
-    parser.add_argument( '--output', '-o', required=True, type=str, help='Path to file for storing prediction (hdf5).' )
     parser.add_argument( '--output-internal', '-i', default='prediction', help='Internal path for storing prediction.' )
     parser.add_argument( '--load-normalization', '-l', default='', type=str, help='If specified, data will be normalized with mean and variance loaded from file.' )
     parser.add_argument( '--load-normalization-internal', '-n', default='handler', type=str, help='Internal path for handler.' )
@@ -37,15 +36,26 @@ if __name__ == "__main__":
         handler.load( args.load_normalization, args.load_normalization_internal )
         data = handler.normalizeData( data )
         
-
     if args.predict_probabilities:
         prediction = classifier.predictProbabilities( data )
     else:
         prediction = classifier.predictLabels( data )
 
     correct = np.sum( prediction.flat == labels.flat )
+    acc = correct * 1.0 / np.product( prediction.shape )
 
-    print correct, np.product( prediction.shape ), correct * 1.0 / np.product( prediction.shape )
-        
+    labelList = np.unique( labels ) 
+    # Compute balanced class accuracy
+    acc_bal = 0.0
+    for l in labelList:
+       numL = np.sum( labels.flat == l )
+       # the true positive rate for this label
+       acc_bal += np.sum( np.logical_and( (labels.flat == l), (prediction.flat == l))) 
+
+    # divide by number of labels
+    acc_bal /= np.prod( labels.shape )
+
+    print "Ncorrect\tN\tacc\tacc_bal"
+    print "%d\t\t%d\t%0.4f\t%0.4f" % ( correct,  np.product( prediction.shape ), acc, acc_bal ) 
 
     sys.exit( 0 )
