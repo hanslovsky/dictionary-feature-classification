@@ -23,9 +23,9 @@ cd /groups/saalfeld/home/bogovicj/dev/main/dictionary-feature-classification/pyt
 echo "training..."
 python train.py -d $trainData -o $classifierFile -i $classifierType -c $classifierType
 echo "prediction on training data..."
-python test.py -d $trainData -f $classifierFile -o $trainPredFile -c $classifierType -p $classifierType
+python test.py -d $trainData -f $classifierFile -c $classifierType -p $classifierType
 echo "prediction on test data..."
-python test.py -d $testData -f $classifierFile -o $testPredFile -c $classifierType -p $classifierType
+python test.py -d $testData -f $classifierFile -c $classifierType -p $classifierType
 
 cd $cwd
 echo "done!"
