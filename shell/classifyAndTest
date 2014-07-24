@@ -1,12 +1,13 @@
 #!/bin/bash
 # Classify and test
 # 
-# $classifyAndTest <training data h5> <test data h5> <base output location> <classifier type>
+# $classifyAndTest <training data h5> <test data h5> <base output location> <classifier type> <subSample>
 
 trainData=$1
 testData=$2
 resultBase=$3
 classifierType=$4
+subSample=$5
 
 classifierFile=$resultBase"_classifier-"$classifierType".h5"
 trainPredFile=$resultBase"_trainPredictions-"$classifierType".h5"
@@ -21,7 +22,7 @@ cwd=`pwd`
 cd /groups/saalfeld/home/bogovicj/dev/main/dictionary-feature-classification/python/saalfeldlab
 
 echo "training..."
-python train.py -d $trainData -o $classifierFile -i $classifierType -c $classifierType
+python train.py -d $trainData -o $classifierFile -i $classifierType -c $classifierType -b $subSample
 echo "prediction on training data..."
 python test.py -d $trainData -f $classifierFile -c $classifierType -p $classifierType
 echo "prediction on test data..."
