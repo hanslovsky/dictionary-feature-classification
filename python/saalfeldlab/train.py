@@ -21,20 +21,30 @@ if __name__ == "__main__":
     parser.add_argument( '--internal-path', '-i', required=True, type=str, help='Internal path for storing classifier.' )
     parser.add_argument( '--save-normalization', '-s', default='', type=str, help='If specified, data will be normalized and mean and variance will be save to file.' )
     parser.add_argument( '--save-normalization-internal', '-n', default='handler', type=str, help='Internal path for handler.' )
+    parser.add_argument( '--subsample', '-b', default='-1', type=str, help='Number of data sample to use.' )
     parser.add_argument( '--kwargs', '-k', default='{}', type=str, help='Specify classifier parameters as dictionary.' )
 
     args = parser.parse_args()
 
     classifier = getattr( classifiers, args.classifier )( **ast.literal_eval( args.kwargs ) )
 
-    handler      = data.DataHandler( args.training_data, np.dtype( args.data_type ) )
+    handler      = data.DataHandler( args.training_data, np.dtype( args.data_type ), args.subsample )
+    print 'reading the data'
     data, labels = handler.createFeatureMatrixAndLabelVector()
+    print 'done'
+
+    #if args.subsample >= 0 :
+    #   print 'subsampling'
+    #   data, labels = handler.subSampleData( data, labels )
+    #   print 'done'
 
     if not args.save_normalization == '':
         data = handler.normalizeData( data )
         handler.save( args.save_normalization, args.save_normalization_internal )
 
+    print 'training'
     classifier.train( data, labels )
     classifier.save( args.output, args.internal_path )
+    print 'done'
 
     sys.exit( 0 )
