@@ -1,0 +1,36 @@
+#!/bin/bash
+# Test training a random forest on subsampled data
+#
+# run_script test_rf_subsamp "medulla_full 1k samples no testing" 
+
+resultDir=$1
+
+# Sample data
+#trainFn='/nobackup/saalfeld/john/forPhilipp/med_sample_train/0'
+#testFn='/nobackup/saalfeld/john/forPhilipp/med_sample_test/0'
+
+trainFn='/nobackup/saalfeld/john/medulla_features/trainLrDict/0'
+testFn='/nobackup/saalfeld/john/medulla_features/testLrDict/0'
+
+outBase="$resultDir/med_sample_train_rf_ss_1k"
+subSamp="10000"
+
+# $classifyAndTest <training data h5> <test data h5> <base output location> <classifier type> <subSample>
+#classifyAndTest $trainFn $testFn $outBase RandomForest $subSamp
+
+classifierType="RandomForest"
+classifierFile=$outBase"_classifier-"$classifierType".h5"
+
+echo $resultBase
+echo $classifierFile
+echo $trainPredFile
+echo $testPredFile
+
+cwd=`pwd`
+cd /groups/saalfeld/home/bogovicj/dev/main/dictionary-feature-classification/python/saalfeldlab
+
+echo "training..."
+python train.py -d $trainFn -o $classifierFile -i $classifierType -c $classifierType -b $subSamp
+
+cd $cwd
+echo "done!"
