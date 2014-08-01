@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 import math
 
 def getPatches( img, patchSize, N=-1, order='F'):
@@ -9,24 +10,46 @@ def getPatches( img, patchSize, N=-1, order='F'):
 
     sz = img.shape 
 
-    startIdx = pRad 
-    endIdx   = sz - pRad - 1
+    if N > 0 :
 
-    coords = np.zeros( [nDim, N] )
+        startIdx = pRad 
+        endIdx   = sz - pRad - 1
+        coords = np.zeros( [nDim, N] )
 
-    for d in range(0,nDim):
-       print d
-       coords[d,:] = np.random.random_integers( startIdx[d],
-             endIdx[d], N ) 
+        for d in range( 0, nDim ):
+           coords[d,:] = np.random.random_integers( startIdx[d], endIdx[d], N ) 
 
-    patchList = np.zeros( [N, pNumel], order=order)
-    for i in range(0,N):
-        
-        thisPatch = img[ coords[0,i]-pRad[0] : coords[0,i]+pRad[0]+1, 
-                         coords[1,i]-pRad[1] : coords[1,i]+pRad[1]+1, 
-                         coords[2,i]-pRad[2] : coords[2,i]+pRad[2]+1]
+        patchList = np.zeros( [N, pNumel], order=order)
+        for i in range(0,N):
+            thisPatch = img[ coords[0,i]-pRad[0] : coords[0,i]+pRad[0]+1, 
+                             coords[1,i]-pRad[1] : coords[1,i]+pRad[1]+1, 
+							 coords[2,i]-pRad[2] : coords[2,i]+pRad[2]+1 ]
 
-        patchList[i,:] = thisPatch.flatten()
+            patchList[i,:] = thisPatch.flatten()
+    else:
+        # find the number of elements
+        subSz = np.array(sz) - 2 * pRad
+        N = np.prod( subSz ) 
+        patchList = np.zeros( [N, pNumel], order=order)
+        print " subSz + pRad ", subSz + pRad
+        for i,(x,y,z) in enumerate( itertools.product( *map( xrange, subSz ))):
+            print i,x,y,z
+            x+=pRad[0]
+            y+=pRad[1]
+            z+=pRad[2]
+            print x
+            print y
+            print z
+            print x+patchSize[0]
+            print y+patchSize[1]
+            print z+patchSize[2]
+            thisPatch = img[ x : x+patchSize[0], 
+                             y : y+patchSize[1], 
+							 z : z+patchSize[2] ]
+
+            print thisPatch.shape
+
+            patchList[i,:] = thisPatch.flatten()
 
     return patchList
 
