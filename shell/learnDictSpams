@@ -1,0 +1,26 @@
+#!/bin/bash
+# Wrapper around learnDictionary.py for use with run_script
+# learnDictSpams <input img h5> <other params...>
+# 
+# See learnDictionary.py for parameter details.
+
+saalfeldPyDir="/groups/saalfeld/home/bogovicj/dev/main/dictionary-feature-classification/python/saalfeldlab"
+
+outdir=$1
+shift
+
+imgPath=$1
+shift
+
+# remove dir if img is a path
+imgFn=${imgPath##*/}
+tmp=`echo $imgFn | sed 's/.h5/_dict.h5/g'`
+dictFn="$outdir/$tmp"
+
+echo $dictFn
+
+# backup learn dictionary
+cp $saalfeldPyDir/learnDictionary.py $outdir
+chmod 0444 $outdir/learnDictionary.py
+
+python $outdir/learnDictionary.py -i $imgPath -o $dictFn $@
