@@ -2,7 +2,7 @@ import numpy as np
 import itertools
 import math
 
-def getPatches( img, patchSize, N=-1, order='F'):
+def getPatches( img, patchSize, N=-1, samples_in_cols=True, order='F'):
 
     pNumel = np.prod(patchSize)
     pRad   = (patchSize-1)/2
@@ -11,7 +11,7 @@ def getPatches( img, patchSize, N=-1, order='F'):
     sz = img.shape 
 
     if N > 0 :
-
+        #print "grabbing ", N, " patches"
         startIdx = pRad 
         endIdx   = sz - pRad - 1
         coords = np.zeros( [nDim, N] )
@@ -19,37 +19,41 @@ def getPatches( img, patchSize, N=-1, order='F'):
         for d in range( 0, nDim ):
            coords[d,:] = np.random.random_integers( startIdx[d], endIdx[d], N ) 
 
-        patchList = np.zeros( [N, pNumel], order=order)
+        if samples_in_cols:
+            patchList = np.zeros( [pNumel, N], order=order)
+        else:
+            patchList = np.zeros( [N, pNumel], order=order)
+            
         for i in range(0,N):
             thisPatch = img[ coords[0,i]-pRad[0] : coords[0,i]+pRad[0]+1, 
                              coords[1,i]-pRad[1] : coords[1,i]+pRad[1]+1, 
 							 coords[2,i]-pRad[2] : coords[2,i]+pRad[2]+1 ]
 
-            patchList[i,:] = thisPatch.flatten()
+            if samples_in_cols:
+                patchList[:,i] = thisPatch.flatten()
+            else:
+                patchList[i,:] = thisPatch.flatten()
+
     else:
+        #print "grabbing all patches"
         # find the number of elements
         subSz = np.array(sz) - 2 * pRad
         N = np.prod( subSz ) 
-        patchList = np.zeros( [N, pNumel], order=order)
-        print " subSz + pRad ", subSz + pRad
+
+        if samples_in_cols:
+            patchList = np.zeros( [pNumel, N], order=order)
+        else:
+            patchList = np.zeros( [N, pNumel], order=order)
+
         for i,(x,y,z) in enumerate( itertools.product( *map( xrange, subSz ))):
-            print i,x,y,z
-            x+=pRad[0]
-            y+=pRad[1]
-            z+=pRad[2]
-            print x
-            print y
-            print z
-            print x+patchSize[0]
-            print y+patchSize[1]
-            print z+patchSize[2]
             thisPatch = img[ x : x+patchSize[0], 
                              y : y+patchSize[1], 
 							 z : z+patchSize[2] ]
 
-            print thisPatch.shape
-
-            patchList[i,:] = thisPatch.flatten()
+            if samples_in_cols:
+                patchList[:,i] = thisPatch.flatten()
+            else:
+                patchList[i,:] = thisPatch.flatten()
 
     return patchList
 
