@@ -40,7 +40,7 @@ if __name__ == "__main__":
     K = args.dictionary_size
     N = args.number
 
-    patchSize = np.fromstring( args.patch_size, dtype=int, sep=' ')
+    patchSize = np.fromstring( args.patch_size, dtype=int, sep='-')
     print "patch size: ", patchSize
 
     print "reading data"
