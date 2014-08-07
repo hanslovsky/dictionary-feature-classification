@@ -16,6 +16,9 @@ def getPatches( img, patchSize, N=-1, samples_in_cols=True, order='F'):
         endIdx   = sz - pRad - 1
         coords = np.zeros( [nDim, N] )
 
+        # Strictly speaking, this does sampling with replacement
+        # but duplicate values are unlikely for N << numel(img)
+        # TODO consider a sampling without replacement
         for d in range( 0, nDim ):
            coords[d,:] = np.random.random_integers( startIdx[d], endIdx[d], N ) 
 

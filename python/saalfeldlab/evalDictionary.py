@@ -4,6 +4,7 @@ import time
 sys.path.append( os.path.dirname( os.path.realpath( __file__ ) ) )
 
 from dictionary import patches
+from dictionary import evaluation
 import numpy as np
 import h5py
 import spams
@@ -25,11 +26,19 @@ if __name__ == "__main__":
           help='Patch size' )
     parser.add_argument( '--threads', '-r', default=1, type=int, 
           help='Number of threads ' )
+    parser.add_argument( '--do-upsampling', '-u', dest='do_upsampling', action='store_true',
+          help='Do upsampling test' )
+    parser.add_argument( '--downsample-factor', '-f', default=3, type=int, 
+          help='Downsampling factor in z' )
     parser.add_argument( '--verbose', '-v', dest='verbose', action='store_true',
           help='Verbose output' )
 
     args = parser.parse_args()
     N = args.number
+    doUpsamp = args.do_upsampling
+
+    #print "do upsample test", doUpsamp 
+
 
     patchSize = np.fromstring( args.patch_size, dtype=int, sep='-')
     print "patch size: ", patchSize
@@ -47,13 +56,17 @@ if __name__ == "__main__":
     t = toc - tic
     print 'time to grab patches: %f' % t 
 
-    print X.shape
-    print np.isfortran( X )
-
     params = {    'lambda1' : 0.15, 
                'numThreads' : args.threads,
                   'verbose' : args.verbose }
 
+    ###############################
+    lst = [ 'L','lambda1','lambda2','mode','pos','ols','numThreads','length_path','verbose','cholesky']
+    lparam = {'return_reg_path' : False}
+    for x in lst:
+        if x in params:
+            lparam[x] = params[x]
+    ###############################
                   
     print "loading dictionary"
     tic = time.time()
@@ -64,20 +77,13 @@ if __name__ == "__main__":
     t = toc - tic
     print 'time to load dictionary: %f' % t 
 
-    print D.shape
-    print np.isfortran( D )
+    print "D shape",D.shape
+    print "X shape",X.shape
 
     #if args.objective_function:
-    if True:
+    #if True:
+    if False:
         print "computing objective function"
-
-        ###############################
-        lst = [ 'L','lambda1','lambda2','mode','pos','ols','numThreads','length_path','verbose','cholesky']
-        lparam = {'return_reg_path' : False}
-        for x in lst:
-            if x in params:
-                lparam[x] = params[x]
-        ###############################
 
         tic = time.time()
 
@@ -89,6 +95,23 @@ if __name__ == "__main__":
         print "  objective function value: %f" % R
         t = toc - tic
         print 'time of computation for objective function: %f' % t
-  
+ 
+    if doUpsamp:
+        print "doing upsampling evaluation"
+        tic = time.time()
+        X_ds = evaluation.downsamplePatchList( X, patchSize, args.downsample_factor )  
+        X_ds = np.asfortranarray( X_ds )
+
+        D_ds = evaluation.downsamplePatchList( D, patchSize, args.downsample_factor )  
+        D_ds = np.asfortranarray( D_ds )
+
+        alpha = spams.lasso( X_ds, D = D_ds, **lparam )
+
+        xd_ds = X - D * alpha
+        R_ds = np.mean((xd_ds * xd_ds).sum(axis=0))
+        toc = time.time()
+
+        print "mean squared error: %f" % R_ds
+        print 'time of computation: %f' % t
 
     sys.exit( 0 )
