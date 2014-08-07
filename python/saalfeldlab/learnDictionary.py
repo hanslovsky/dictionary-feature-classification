@@ -102,6 +102,16 @@ if __name__ == "__main__":
         h5out = h5py.File( args.output, 'a' )
         h5out.create_dataset("dict", data=D)
         h5out.create_dataset("objective", data=R)
+
+        # save parameters
+        paramGroup = h5out.create_group("param")
+        for pKey in params.keys():
+            paramGroup.create_dataset( pKey, data=params[pKey])
+
+        # save image and number of samples
+        paramGroup.create_dataset( 'source_img', data=args.image )
+        paramGroup.create_dataset( 'numSamples', data=N )
+
         h5out.flush()
         h5out.close()
            
