@@ -15,6 +15,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument( '--image', '-i', required=True, type=str, 
           help='The source hdf5 image' )
+    #parser.add_argument( '--test-image', '-s', default="", type=str, 
+    #      help='The test hdf5 image' )
+    #parser.add_argument( '--downsample-factor', '-f', default=3, type=int, 
+    #      help='Downsampling factor in z' )
     parser.add_argument( '--output', '-o', default="", type=str, 
           help='The output hdf5 file where the dictionary will be stored' )
     parser.add_argument( '--image-internal-directory', '-d', default='main', type=str, 
@@ -29,7 +33,7 @@ if __name__ == "__main__":
           help='Dictionary learning iterations' )
     parser.add_argument( '--batch-size', '-b', default=100, type=int,
           help="Batch size")
-#    parser.add_argument( '--objective-function', '-f', default=False, type=bool,
+#    parser.add_argument( '--objective-function', '-j', default=False, type=bool,
 #          help="Compute and print value of objective function")
     parser.add_argument( '--threads', '-r', default=1, type=int, 
           help='Number of threads ' )
@@ -97,7 +101,7 @@ if __name__ == "__main__":
 
     # Write the dictionary
     if args.output:
-        print "writing dictionary"
+        print "Writing dictionary"
 
         h5out = h5py.File( args.output, 'a' )
         h5out.create_dataset("dict", data=D)
@@ -114,6 +118,6 @@ if __name__ == "__main__":
 
         h5out.flush()
         h5out.close()
-           
+    
         
     sys.exit( 0 )

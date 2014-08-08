@@ -1,26 +1,26 @@
 #!/bin/bash
 
-
-
 trainingImg="/groups/jain/home/jainv/datasets/medulla_oct12/training/im_normalized_0mean.h5"
 testImg="/groups/jain/home/jainv/datasets/medulla_oct12/validation/im_normalized_0mean.h5"
 
-for dictionarySize in 250 500 1000
-do
-    for nSamples in 100000 500000 1000000
-    do
-        echo "dictionary size: "$dictionarySize
-        echo "num samples "$nSamples 
-        echo " " 
-        sleep 1
-        run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary of size $dictionarySize with $nSamples samples" $trainingImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9"
-    done
-done
+#for dictionarySize in 250 500 1000
+#do
+#    for nSamples in 100000 500000 1000000
+#    do
+#        echo "dictionary size: "$dictionarySize
+#        echo "num samples "$nSamples 
+#        echo " " 
+#        sleep 1
+#        run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary of size $dictionarySize with $nSamples samples" $trainingImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9"
+#    done
+#done
 
 
-#dictionarySize="1000"
-#nSamples="1000000"
+dictionarySize="200"
+nSamples="1000"
 #echo $nSamples 
 #echo $dictionarySize
 #
 #run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary patchSize: 7^3, of size $dictionarySize with $nSamples samples" $trainingImg -n $nSamples -k $dictionarySize -r 4 -p "7-7-7"
+
+run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary patchSize: 9^3, of size $dictionarySize with $nSamples samples" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9"

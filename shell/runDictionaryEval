@@ -17,11 +17,23 @@ testImg="/groups/jain/home/jainv/datasets/medulla_oct12/validation/im_normalized
 #done
 
 dictionaryFn="/groups/saalfeld/home/bogovicj/reseach/exp/saved_sh_exp/exp0041_learnDictSpams_20140804162829/im_normalized_0mean_dict.h5"
-nSamples="1000"
+nSamples="1000000"
 
-#echo $nSamples 
+echo $nSamples 
 #echo $dictionarySize
 #
 #run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary patchSize: 7^3, of size $dictionarySize with $nSamples samples" $trainingImg -n $nSamples -k $dictionarySize -r 4 -p "7-7-7"
 
-python $pydir/evalDictionary.py -i $trainingImg -n $nSamples -c $dictionaryFn -p "9-9-9" -u
+#run_script "qsub -pe batch 4 -cwd -V " python $pydir/evalDictionary.py -i $trainingImg -n $nSamples -c $dictionaryFn -p "9-9-9" -u
+
+# This range of experiments cover 9^3 patches
+#for i in 36; do
+for i in {36..44}; do
+     expnum=`printf 'exp%04d' $i`
+     #echo $expnum
+     dictfn=`ls "$EXP_SAVE_PATH/saved_sh_exp/$expnum"*/*".h5"`
+     #echo $dictfn
+     run_script "qsub -pe batch 4 -cwd -V" evalDictSpams "evaluate dictionary patchSize: 9^3, of size $dictionarySize with $nSamples samples" $testImg $dictfn -n $nSamples -r 4 -p "9-9-9" -u -v
+     #evalDictSpams "hi" $testImg $dictfn -n $nSamples -r 4 -p "9-9-9" -u -v
+done
+

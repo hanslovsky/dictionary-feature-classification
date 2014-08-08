@@ -37,9 +37,6 @@ if __name__ == "__main__":
     N = args.number
     doUpsamp = args.do_upsampling
 
-    #print "do upsample test", doUpsamp 
-
-
     patchSize = np.fromstring( args.patch_size, dtype=int, sep='-')
     print "patch size: ", patchSize
 
@@ -84,7 +81,7 @@ if __name__ == "__main__":
     #if True:
     if False:
         print "computing objective function"
-
+        
         tic = time.time()
 
         alpha = spams.lasso( X, D = D, **lparam )
@@ -99,12 +96,16 @@ if __name__ == "__main__":
     if doUpsamp:
         print "doing upsampling evaluation"
         tic = time.time()
-        X_ds = evaluation.downsamplePatchList( X, patchSize, args.downsample_factor )  
+        # dsz - size of downsampled image patch
+        X_ds,dsz = evaluation.downsamplePatchList( X, patchSize, np.array([1,1,args.downsample_factor]))
         X_ds = np.asfortranarray( X_ds )
 
-        D_ds = evaluation.downsamplePatchList( D, patchSize, args.downsample_factor )  
+        D_ds,Ddsz = evaluation.downsamplePatchList( D, patchSize, np.array([1,1,args.downsample_factor]))  
         D_ds = np.asfortranarray( D_ds )
-
+    
+        print "dz patch sz ", dsz, " Ddsz ", Ddsz
+        print "D_ds shape",D_ds.shape
+        print "X_ds shape",X_ds.shape
         alpha = spams.lasso( X_ds, D = D_ds, **lparam )
 
         xd_ds = X - D * alpha
@@ -113,5 +114,18 @@ if __name__ == "__main__":
 
         print "mean squared error: %f" % R_ds
         print 'time of computation: %f' % t
+
+
+        print "comparing up NN upsampling"
+		# Compare to linearly upsampled patch
+        tic = time.time()
+        X_us = evaluation.upsamplePatchList( X_ds, dsz, args.downsample_factor )
+        xd_us = X - X_us
+        R_us = np.mean( (xd_us * xd_us).sum(axis=0))
+        toc = time.time()
+
+        print "mean squared error upsample nearest: %f" % R_us
+        print 'time of computation: %f' % t
+
 
     sys.exit( 0 )
