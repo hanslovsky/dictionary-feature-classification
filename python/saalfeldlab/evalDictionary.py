@@ -70,6 +70,13 @@ if __name__ == "__main__":
     dfn = h5py.File( args.dictionary )	
     D =  dfn[ 'dict' ][...]
     D = np.asfortranarray( D )
+    # Read dictionary parameters
+    #dparamsGrp = dfn[ 'params ']
+    #tmp = []
+    #for k in dparamsGrp.keys():
+    #    tmp.append( (k, dparamsGrp[k]))    
+
+    #lparam = dict( tmp )
     toc = time.time()	
     t = toc - tic
     print 'time to load dictionary: %f' % t 
