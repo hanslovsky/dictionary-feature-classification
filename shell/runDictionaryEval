@@ -4,7 +4,8 @@ pydir="/groups/saalfeld/home/bogovicj/dev/main/dictionary-feature-classification
 trainingImg="/groups/jain/home/jainv/datasets/medulla_oct12/training/im_normalized_0mean.h5"
 testImg="/groups/jain/home/jainv/datasets/medulla_oct12/validation/im_normalized_0mean.h5"
 
-#for dictionarySize in 250 500 1000
+##for dictionarySize in 250 500 1000
+#for dictionarySize in 2000
 #do
 #    for nSamples in 100000 500000 1000000
 #    do
@@ -12,14 +13,30 @@ testImg="/groups/jain/home/jainv/datasets/medulla_oct12/validation/im_normalized
 #        echo "num samples "$nSamples 
 #        echo " " 
 #        sleep 1
-#        run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary of size $dictionarySize with $nSamples samples" $trainingImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9"
+#        run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary of size $dictionarySize with $nSamples samples" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -f 3
 #    done
 #done
 
-dictionaryFn="/groups/saalfeld/home/bogovicj/reseach/exp/saved_sh_exp/exp0041_learnDictSpams_20140804162829/im_normalized_0mean_dict.h5"
-nSamples="1000000"
+dictionarySize=1000
+nSamples=500000
+niters=1000
 
-echo $nSamples 
+for lam in "0.001" "0.01" "0.1" "0.25" "0.5" 
+do
+    echo "lam: $lam"
+    sleep 1
+    run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "varying lambda $lam" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3 -l $lam
+done
+
+#for niters in 500 1000 5000 10000
+#do
+#    echo "niters: $niters"
+#    sleep 1
+#    run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary of size $dictionarySize with $nSamples samples" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3
+#done
+
+
+#echo $nSamples 
 #echo $dictionarySize
 #
 #run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "learn dictionary patchSize: 7^3, of size $dictionarySize with $nSamples samples" $trainingImg -n $nSamples -k $dictionarySize -r 4 -p "7-7-7"
@@ -28,12 +45,33 @@ echo $nSamples
 
 # This range of experiments cover 9^3 patches
 #for i in 36; do
-for i in {36..44}; do
-     expnum=`printf 'exp%04d' $i`
-     #echo $expnum
-     dictfn=`ls "$EXP_SAVE_PATH/saved_sh_exp/$expnum"*/*".h5"`
-     #echo $dictfn
-     run_script "qsub -pe batch 4 -cwd -V" evalDictSpams "evaluate dictionary patchSize: 9^3, of size $dictionarySize with $nSamples samples" $testImg $dictfn -n $nSamples -r 4 -p "9-9-9" -u -v
-     #evalDictSpams "hi" $testImg $dictfn -n $nSamples -r 4 -p "9-9-9" -u -v
-done
+#for i in {36..44}; do
+#for i in {46..54}; do
+#     expnum=`printf 'exp%04d' $i`
+##     #echo $expnum
+##     dictfn=`ls "$EXP_SAVE_PATH/saved_sh_exp/$expnum"*/*".h5"`
+##     #echo $dictfn
+##     run_script "qsub -pe batch 4 -cwd -V" evalDictSpams "evaluate dictionary patchSize: 9^3, of size $dictionarySize with $nSamples samples" $testImg $dictfn -n $nSamples -r 4 -p "9-9-9" -u -v
+##     #evalDictSpams "hi" $testImg $dictfn -n $nSamples -r 4 -p "9-9-9" -u -v
+#
+## PRINT OUT RESULTS OF OLDER EXPS
+##    fn=$EXP_SAVE_PATH/saved_sh_exp/$expnum*/output.txt
+##    tmp=`grep dict.h5 $fn`
+##    learnnum=${tmp%/*}
+##    #echo $learnnum/cmd*
+##    cat $learnnum/cmd*
+##    echo "     "
+##    cat $fn | grep 'mean squared'
+##    echo "     "
+##    echo "     "
+##    #cat $EXP_SAVE_PATH/saved_sh_exp/$expnum*/output.txt
+##    #cat $EXP_SAVE_PATH/saved_sh_exp/$expnum*/cmd*
+#done
+
+
+#python $pydir/evalDictionary.py -i $trainingImg -n $nSamples -c $dictionaryFn -p "9-9-9" -u
+
+#python $pydir/learnDictionary.py -i $trainingImg -s $testImg -n $nSamples -p "9-9-9" -f 3 -t 5 -l 0.01
+
+
 

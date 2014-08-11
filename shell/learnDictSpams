@@ -30,12 +30,6 @@ chmod 0444 $outdir/evalDictionary.py
 echo " ########################## "
 echo " TRAINING "
 echo " ########################## "
-python $outdir/learnDictionary.py -i $imgPath -o $dictFn $@
-
-
-echo " ########################## "
-echo " TESTING "
-echo " ########################## "
-python $outdir/evalDictionary.py -i $testImgPath -c $dictFn -n 1000 -r 4 -p "9-9-9" -f 3 -u
+python $outdir/learnDictionary.py -i $imgPath -s $testImgPath -o $dictFn $@
 
 echo " all done  "

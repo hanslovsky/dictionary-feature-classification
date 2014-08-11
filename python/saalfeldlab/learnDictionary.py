@@ -3,7 +3,7 @@ import sys
 import time
 sys.path.append( os.path.dirname( os.path.realpath( __file__ ) ) )
 
-from dictionary import patches
+from dictionary import *
 import numpy as np
 import h5py
 import spams
@@ -17,7 +17,7 @@ if __name__ == "__main__":
           help='The source hdf5 image' )
     parser.add_argument( '--test-image', '-s', default="", type=str, 
           help='The test hdf5 image' )
-    parser.add_argument( '--downsample-factor', '-f', default=3, type=int, 
+    parser.add_argument( '--downsample-factor', '-f', default=-1, type=int, 
           help='Downsampling factor in z' )
     parser.add_argument( '--output', '-o', default="", type=str, 
           help='The output hdf5 file where the dictionary will be stored' )
@@ -27,12 +27,13 @@ if __name__ == "__main__":
           help='Number of patches' )
     parser.add_argument( '--dictionary-size', '-k', default=100,
           type=int, help='Dictionary size' )
+    parser.add_argument( '--lambda1', '-l', default=0.15,
+          type=float, help='Lambda (sparsity parameter)' )
     parser.add_argument( '--patch-size', '-p', default='5 5 5', type=str, 
           help='Patch size' )
     parser.add_argument( '--iterations', '-t', default=1000, type=int,
           help='Dictionary learning iterations' )
-    parser.add_argument( '--batch-size', '-b', default=100, type=int,
-          help="Batch size")
+    parser.add_argument( '--batch-size', '-b', default=100, type=int, help="Batch size")
 #    parser.add_argument( '--objective-function', '-j', default=False, type=bool,
 #          help="Compute and print value of objective function")
     parser.add_argument( '--threads', '-r', default=1, type=int, 
@@ -43,6 +44,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     K = args.dictionary_size
     N = args.number
+
+    print "lambda", args.lambda1 
+
+    dsFactor = args.downsample_factor
+    doUpTest = False 
+    if dsFactor > 1:
+        doUpTest = True 
+        ds = np.array([1,1,dsFactor])
 
     patchSize = np.fromstring( args.patch_size, dtype=int, sep='-')
     print "patch size: ", patchSize
@@ -61,7 +70,7 @@ if __name__ == "__main__":
     print 'time to grab patches: %f' % t 
 
     params = {          'K' : K,
-                  'lambda1' : 0.15, 
+                  'lambda1' : args.lambda1, 
                'numThreads' : args.threads,
                 'batchsize' : args.batch_size,
                      'iter' : args.iterations,
@@ -90,13 +99,21 @@ if __name__ == "__main__":
         tic = time.time()
         R = evaluation.dictEval( X, D, lparam )
         toc = time.time()
-
-        print " TRAIN objective function value: %f" % R
         t = toc - tic
+        print " TRAIN objective function value: %f" % R
         print 'time of computation for objective function: %f' % t
 
+        if doUpTest:
+            tic = time.time()
+            Xd,dsPatchSz = evaluation.downsamplePatchList( X, patchSize, ds)
+            Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
+            Ru = evaluation.dictEval( Xd, Dd, lparam, lam=0, dsfactor=ds, patchSize=dsPatchSz )
+            toc = time.time()
+            t = toc - tic
+            print " TRAIN objective function on downsampled value: %f" % Ru
+            print 'time of computation for objective function: %f' % t
+
     if args.test_image:
-        print "hi"
         # read the image
         ft = h5py.File( args.test_image )
         imt = f[ args.image_internal_directory ][...]
@@ -107,9 +124,19 @@ if __name__ == "__main__":
         tic = time.time()
         Rt = evaluation.dictEval( Xt, D, lparam )
         toc = time.time()
-        print " TEST objective function value: %f" % Rt
         t = toc - tic
+        print " TEST objective function value: %f" % Rt 
         print 'time of computation for objective function: %f' % t
+
+        if doUpTest:
+            tic = time.time()
+            Xtd,dsPatchSz = evaluation.downsamplePatchList( Xt, patchSize, ds)
+            Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
+            Rtu = evaluation.dictEval( Xtd, Dd, lparam, lam=0, dsfactor=ds, patchSize=dsPatchSz )
+            toc = time.time()
+            t = toc - tic
+            print " TEST objective function on downsampled value: %f" % Rtu 
+            print 'time of computation for objective function: %f' % t
 
 
     # Write the dictionary
