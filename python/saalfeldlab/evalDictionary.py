@@ -22,8 +22,6 @@ if __name__ == "__main__":
           help='Internal directory of hdf5 image' )
     parser.add_argument( '--number', '-n', default='-1', type=int, 
           help='Number of patches' )
-    parser.add_argument( '--patch-size', '-p', default='5-5-5', type=str, 
-          help='Patch size' )
     parser.add_argument( '--threads', '-r', default=1, type=int, 
           help='Number of threads ' )
     parser.add_argument( '--do-upsampling', '-u', dest='do_upsampling', action='store_true',
@@ -36,6 +34,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     N = args.number
     doUpsamp = args.do_upsampling
+
+    if args.do_upsampling:
+        dsfactor = np.array([1,1,args.downsample_factor])
 
     patchSize = np.fromstring( args.patch_size, dtype=int, sep='-')
     print "patch size: ", patchSize
@@ -53,17 +54,17 @@ if __name__ == "__main__":
     t = toc - tic
     print 'time to grab patches: %f' % t 
 
-    params = {    'lambda1' : 0.15, 
-               'numThreads' : args.threads,
-                  'verbose' : args.verbose }
+    #params = {    'lambda1' : 0.15, 
+    #           'numThreads' : args.threads,
+    #              'verbose' : args.verbose }
 
-    ###############################
-    lst = [ 'L','lambda1','lambda2','mode','pos','ols','numThreads','length_path','verbose','cholesky']
-    lparam = {'return_reg_path' : False}
-    for x in lst:
-        if x in params:
-            lparam[x] = params[x]
-    ###############################
+    ################################
+    #lst = [ 'L','lambda1','lambda2','mode','pos','ols','numThreads','length_path','verbose','cholesky']
+    #lparam = {'return_reg_path' : False}
+    #for x in lst:
+    #    if x in params:
+    #        lparam[x] = params[x]
+    ################################
                   
     print "loading dictionary"
     tic = time.time()
@@ -71,12 +72,12 @@ if __name__ == "__main__":
     D =  dfn[ 'dict' ][...]
     D = np.asfortranarray( D )
     # Read dictionary parameters
-    #dparamsGrp = dfn[ 'params ']
-    #tmp = []
-    #for k in dparamsGrp.keys():
-    #    tmp.append( (k, dparamsGrp[k]))    
+    dparamsGrp = dfn[ 'params ']
+    tmp = []
+    for k in dparamsGrp.keys():
+        tmp.append( (k, dparamsGrp[k]))    
 
-    #lparam = dict( tmp )
+    lparam = dict( tmp )
     toc = time.time()	
     t = toc - tic
     print 'time to load dictionary: %f' % t 
@@ -104,10 +105,10 @@ if __name__ == "__main__":
         print "doing upsampling evaluation"
         tic = time.time()
         # dsz - size of downsampled image patch
-        X_ds,dsz = evaluation.downsamplePatchList( X, patchSize, np.array([1,1,args.downsample_factor]))
+        X_ds,dsz = evaluation.downsamplePatchList( X, patchSize, dsfactor )
         X_ds = np.asfortranarray( X_ds )
 
-        D_ds,Ddsz = evaluation.downsamplePatchList( D, patchSize, np.array([1,1,args.downsample_factor]))  
+        D_ds,Ddsz = evaluation.downsamplePatchList( D, patchSize, dsfactor )  
         D_ds = np.asfortranarray( D_ds )
     
         print "dz patch sz ", dsz, " Ddsz ", Ddsz

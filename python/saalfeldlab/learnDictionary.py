@@ -15,10 +15,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument( '--image', '-i', required=True, type=str, 
           help='The source hdf5 image' )
-    #parser.add_argument( '--test-image', '-s', default="", type=str, 
-    #      help='The test hdf5 image' )
-    #parser.add_argument( '--downsample-factor', '-f', default=3, type=int, 
-    #      help='Downsampling factor in z' )
+    parser.add_argument( '--test-image', '-s', default="", type=str, 
+          help='The test hdf5 image' )
+    parser.add_argument( '--downsample-factor', '-f', default=3, type=int, 
+          help='Downsampling factor in z' )
     parser.add_argument( '--output', '-o', default="", type=str, 
           help='The output hdf5 file where the dictionary will be stored' )
     parser.add_argument( '--image-internal-directory', '-d', default='main', type=str, 
@@ -88,13 +88,26 @@ if __name__ == "__main__":
         ###############################
 
         tic = time.time()
-
-        alpha = spams.lasso( X, D = D, **lparam )
-        xd = X - D * alpha 
-        R = np.mean(0.5 * (xd * xd).sum(axis=0) + params['lambda1'] * np.abs(alpha).sum(axis=0))
+        R = evaluation.dictEval( X, D, lparam )
         toc = time.time()
 
-        print "  objective function value: %f" % R
+        print " TRAIN objective function value: %f" % R
+        t = toc - tic
+        print 'time of computation for objective function: %f' % t
+
+    if args.test_image:
+        print "hi"
+        # read the image
+        ft = h5py.File( args.test_image )
+        imt = f[ args.image_internal_directory ][...]
+        ft.close()
+        # grab the patches 
+        Xt = patches.getPatches( imt, patchSize, N ) 
+        # Compute representation
+        tic = time.time()
+        Rt = evaluation.dictEval( Xt, D, lparam )
+        toc = time.time()
+        print " TEST objective function value: %f" % Rt
         t = toc - tic
         print 'time of computation for objective function: %f' % t
 
@@ -118,6 +131,7 @@ if __name__ == "__main__":
 
         h5out.flush()
         h5out.close()
+
     
         
     sys.exit( 0 )
