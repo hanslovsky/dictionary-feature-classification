@@ -14,6 +14,21 @@ shift
 testImgPath=$1
 shift
 
+doIpo=0
+while true; do
+    case "$1" in
+        --patches-out)
+            doIpo=1
+            shift
+        ;;
+        *)
+            break
+        ;;
+    esac
+done;
+
+echo "doIpo = $doIpo"
+
 # remove dir if img is a path
 imgFn=${imgPath##*/}
 tmp=`echo $imgFn | sed 's/.h5/_dict.h5/g'`
@@ -21,15 +36,32 @@ dictFn="$outdir/$tmp"
 
 echo $dictFn
 
+if [[ $doIpo == "1" ]]; then
+    tmp=`echo $imgFn | sed 's/.h5/_patches.h5/g'`
+    patchesFn="$outdir/$tmp"
+    echo $patchesFn
+fi
+
+#echo $patchesFn
+#echo "exiting early"
+#exit 0 
+
 # backup learn dictionary
 cp $saalfeldPyDir/learnDictionary.py $outdir
 chmod 0444 $outdir/learnDictionary.py
-cp $saalfeldPyDir/evalDictionary.py $outdir
-chmod 0444 $outdir/evalDictionary.py
+            
 
 echo " ########################## "
 echo " TRAINING "
 echo " ########################## "
-python $outdir/learnDictionary.py -i $imgPath -s $testImgPath -o $dictFn $@
+
+if [[ $doIpo == "1" ]]; then
+    echo "writing patches"
+    echo $patchesFn
+    python $outdir/learnDictionary.py -i $imgPath -s $testImgPath --patches-out $patchesFn -o $dictFn $@
+else
+    echo "NOT writing patches"
+    python $outdir/learnDictionary.py -i $imgPath -s $testImgPath -o $dictFn $@
+fi
 
 echo " all done  "

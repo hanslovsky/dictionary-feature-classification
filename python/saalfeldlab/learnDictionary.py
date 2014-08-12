@@ -29,6 +29,8 @@ if __name__ == "__main__":
           type=int, help='Dictionary size' )
     parser.add_argument( '--lambda1', '-l', default=0.15,
           type=float, help='Lambda (sparsity parameter)' )
+    parser.add_argument( '--mode', '-m', default=2,
+          type=int, help='Optimization mode' )
     parser.add_argument( '--patch-size', '-p', default='5 5 5', type=str, 
           help='Patch size' )
     parser.add_argument( '--iterations', '-t', default=1000, type=int,
@@ -36,6 +38,10 @@ if __name__ == "__main__":
     parser.add_argument( '--batch-size', '-b', default=100, type=int, help="Batch size")
 #    parser.add_argument( '--objective-function', '-j', default=False, type=bool,
 #          help="Compute and print value of objective function")
+
+    parser.add_argument( '--patches-out', default='', type=str, 
+            help='File in which to write patches')
+
     parser.add_argument( '--threads', '-r', default=1, type=int, 
           help='Number of threads ' )
     parser.add_argument( '--verbose', '-v', dest='verbose', action='store_true',
@@ -45,7 +51,11 @@ if __name__ == "__main__":
     K = args.dictionary_size
     N = args.number
 
-    print "lambda", args.lambda1 
+    patches_out = args.patches_out
+    if patches_out:
+        patchFn = h5py.File( patches_out, 'a' )
+
+    print "input patches fn", patches_out
 
     dsFactor = args.downsample_factor
     doUpTest = False 
@@ -70,6 +80,7 @@ if __name__ == "__main__":
     print 'time to grab patches: %f' % t 
 
     params = {          'K' : K,
+                     'mode' : args.mode,
                   'lambda1' : args.lambda1, 
                'numThreads' : args.threads,
                 'batchsize' : args.batch_size,
@@ -83,6 +94,14 @@ if __name__ == "__main__":
     toc = time.time()
     t = toc - tic
     print 'time of computation for Dictionary Learning: %f' % t 
+
+
+    paramGrpTrn=None
+    paramGrpTst=None
+    if patches_out:
+        print "Writing training patches"
+        paramGrpTrn = patchFn.create_group("training")
+        paramGrpTrn.create_dataset("patches", data=X)
 
     #if args.objective_function:
     if True:
@@ -105,9 +124,9 @@ if __name__ == "__main__":
 
         if doUpTest:
             tic = time.time()
-            Xd,dsPatchSz = evaluation.downsamplePatchList( X, patchSize, ds)
-            Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
-            Ru = evaluation.dictEval( Xd, Dd, lparam, lam=0, dsfactor=ds, patchSize=dsPatchSz )
+            #Xd,dsPatchSz = evaluation.downsamplePatchList( X, patchSize, ds)
+            #Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
+            Ru = evaluation.dictEval( X, D, lparam, lam=0, dsfactor=ds, patchSize=patchSize, patchFnGrp=paramGrpTrn)
             toc = time.time()
             t = toc - tic
             print " TRAIN objective function on downsampled value: %f" % Ru
@@ -128,11 +147,17 @@ if __name__ == "__main__":
         print " TEST objective function value: %f" % Rt 
         print 'time of computation for objective function: %f' % t
 
+
+        if patches_out:
+            print "Writing testing patches"
+            paramGrpTst = patchFn.create_group("testing")
+            paramGrpTst.create_dataset("patches", data=Xt)
+
         if doUpTest:
             tic = time.time()
-            Xtd,dsPatchSz = evaluation.downsamplePatchList( Xt, patchSize, ds)
-            Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
-            Rtu = evaluation.dictEval( Xtd, Dd, lparam, lam=0, dsfactor=ds, patchSize=dsPatchSz )
+            #Xtd,dsPatchSz = evaluation.downsamplePatchList( Xt, patchSize, ds)
+            #Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
+            Rtu = evaluation.dictEval( Xt, D, lparam, lam=0, dsfactor=ds, patchSize=patchSize, patchFnGrp=paramGrpTst )
             toc = time.time()
             t = toc - tic
             print " TEST objective function on downsampled value: %f" % Rtu 
@@ -160,5 +185,7 @@ if __name__ == "__main__":
         h5out.close()
 
     
+    if patches_out:
+        patchFn.close()
         
     sys.exit( 0 )

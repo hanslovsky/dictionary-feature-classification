@@ -17,16 +17,18 @@ testImg="/groups/jain/home/jainv/datasets/medulla_oct12/validation/im_normalized
 #    done
 #done
 
-dictionarySize=1000
-nSamples=500000
-niters=1000
+dictionarySize=500
+nSamples=100000
+niters=100
 
-for lam in "0.001" "0.01" "0.1" "0.25" "0.5" 
-do
-    echo "lam: $lam"
-    sleep 1
-    run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "varying lambda $lam" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3 -l $lam
-done
+run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "a TEST" $trainingImg $testImg --patches-out -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3 -v
+
+#for lam in "0.001" "0.01" "0.1" "0.25" "0.5" 
+#do
+#    echo "lam: $lam"
+#    sleep 1
+#    run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "varying lambda $lam" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3 -l $lam
+#done
 
 #for niters in 500 1000 5000 10000
 #do
@@ -70,8 +72,7 @@ done
 
 
 #python $pydir/evalDictionary.py -i $trainingImg -n $nSamples -c $dictionaryFn -p "9-9-9" -u
-
 #python $pydir/learnDictionary.py -i $trainingImg -s $testImg -n $nSamples -p "9-9-9" -f 3 -t 5 -l 0.01
-
+#python $pydir/learnDictionary.py -i $trainingImg -s $testImg -n $nSamples -p "9-9-9" -f 3 -t 5 
 
 

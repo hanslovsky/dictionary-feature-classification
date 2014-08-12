@@ -1,14 +1,18 @@
 import numpy as np
 
+import h5py
 import scipy
 import spams
 import scipy.ndimage.filters as sp
 from scipy.interpolate import interp1d
 
-def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None):
+def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=None):
     if dsfactor is not None:
         X_useme,dsz  = downsamplePatchList( X, patchSize, dsfactor)
         D_useme,Ddsz = downsamplePatchList( D, patchSize, dsfactor )
+
+        if patchFnGrp:
+            patchFnGrp.create_dataset('patchesDown', data=X_useme)
     else:
         X_useme = X
         D_useme = D
@@ -18,11 +22,17 @@ def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None):
         lam = param['lambda1']
 
     alpha = spams.lasso( np.asfortranarray(X_useme), D = np.asfortranarray(D_useme), **param )
-    xd = X - ( D * alpha )
+    Xre = ( D * alpha )
+
+    if patchFnGrp:
+        patchFnGrp.create_dataset('patchesRecon', data=Xre)
+
+    xd = X - Xre 
 
     R = np.mean( (xd * xd).sum(axis=0))
 
     if lam > 0:
+        print "dictEval - lambda: ", lam
         R = R + lam * np.mean( np.abs(alpha).sum(axis=0))
 
     return R
