@@ -15,11 +15,17 @@ testImgPath=$1
 shift
 
 doIpo=0
+learnDict=1
 while true; do
     case "$1" in
         --patches-out)
             doIpo=1
             shift
+        ;;
+        --dictionary-in)
+            learnDict=0 
+            dictFn=$2
+            shift 2
         ;;
         *)
             break
@@ -27,19 +33,26 @@ while true; do
     esac
 done;
 
-echo "doIpo = $doIpo"
+
+imgFn=${imgPath##*/}
 
 # remove dir if img is a path
-imgFn=${imgPath##*/}
-tmp=`echo $imgFn | sed 's/.h5/_dict.h5/g'`
-dictFn="$outdir/$tmp"
+dictArg=""
+if [[ $learnDict == "1" ]]; then
+    tmp=`echo $imgFn | sed 's/.h5/_dict.h5/g'`
+    dictArg="-o $outdir/$tmp"
+    echo "writing dictionary to $dictFn"
+else
+    dictArg="--dictionary-in $dictFn"
+    echo "loading dictionary from $dictFn"
+fi
 
-echo $dictFn
 
+patchesArg=""
 if [[ $doIpo == "1" ]]; then
     tmp=`echo $imgFn | sed 's/.h5/_patches.h5/g'`
-    patchesFn="$outdir/$tmp"
-    echo $patchesFn
+    patchesArg="--patches-out $outdir/$tmp"
+    echo $patchesArg
 fi
 
 #echo $patchesFn
@@ -55,13 +68,6 @@ echo " ########################## "
 echo " TRAINING "
 echo " ########################## "
 
-if [[ $doIpo == "1" ]]; then
-    echo "writing patches"
-    echo $patchesFn
-    python $outdir/learnDictionary.py -i $imgPath -s $testImgPath --patches-out $patchesFn -o $dictFn $@
-else
-    echo "NOT writing patches"
-    python $outdir/learnDictionary.py -i $imgPath -s $testImgPath -o $dictFn $@
-fi
+python $outdir/learnDictionary.py -i $imgPath -s $testImgPath $patchesArg $dictArg $@
 
 echo " all done  "

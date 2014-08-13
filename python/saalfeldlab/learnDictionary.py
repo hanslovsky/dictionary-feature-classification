@@ -41,6 +41,8 @@ if __name__ == "__main__":
 
     parser.add_argument( '--patches-out', default='', type=str, 
             help='File in which to write patches')
+    parser.add_argument( '--dictionary-in', default='', type=str, 
+            help='A pre-learned dictionary file')
 
     parser.add_argument( '--threads', '-r', default=1, type=int, 
           help='Number of threads ' )
@@ -52,10 +54,11 @@ if __name__ == "__main__":
     N = args.number
 
     patches_out = args.patches_out
+    print "patches out", patches_out
     if patches_out:
         patchFn = h5py.File( patches_out, 'a' )
 
-    print "input patches fn", patches_out
+    dict_in_fn = args.dictionary_in
 
     dsFactor = args.downsample_factor
     doUpTest = False 
@@ -79,21 +82,53 @@ if __name__ == "__main__":
     t = toc - tic
     print 'time to grab patches: %f' % t 
 
-    params = {          'K' : K,
-                     'mode' : args.mode,
-                  'lambda1' : args.lambda1, 
-               'numThreads' : args.threads,
-                'batchsize' : args.batch_size,
-                     'iter' : args.iterations,
-                  'verbose' : args.verbose }
+
+    if dict_in_fn:
+
+        print "loading dictionary from file"
+
+    
+        dfn = h5py.File( dict_in_fn )	
+
+        if 'params' in dfn.keys():
+            # Read dictionary parameters
+            dparamsGrp = dfn[ 'params']
+            tmp = []
+            for k in dparamsGrp.keys():
+                tmp.append( (k, dparamsGrp[k]))    
+
+            params = dict( tmp )
+        else:
+            params = {          'K' : K,
+                             'mode' : args.mode,
+                          'lambda1' : args.lambda1, 
+                       'numThreads' : args.threads,
+                        'batchsize' : args.batch_size,
+                             'iter' : args.iterations,
+                          'verbose' : args.verbose }
 
 
-    print "learning dictionary"
-    tic = time.time()
-    D = spams.trainDL( X, **params )
-    toc = time.time()
-    t = toc - tic
-    print 'time of computation for Dictionary Learning: %f' % t 
+        tic = time.time()
+        D = dfn[ 'dict'][...]
+        toc = time.time()
+        print 'time to load dictionary: %f' % t 
+
+    else:
+        params = {          'K' : K,
+                         'mode' : args.mode,
+                      'lambda1' : args.lambda1, 
+                   'numThreads' : args.threads,
+                    'batchsize' : args.batch_size,
+                         'iter' : args.iterations,
+                      'verbose' : args.verbose }
+
+
+        print "learning dictionary"
+        tic = time.time()
+        D = spams.trainDL( X, **params )
+        toc = time.time()
+        t = toc - tic
+        print 'time of computation for Dictionary Learning: %f' % t 
 
 
     paramGrpTrn=None

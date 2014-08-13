@@ -17,11 +17,14 @@ testImg="/groups/jain/home/jainv/datasets/medulla_oct12/validation/im_normalized
 #    done
 #done
 
-dictionarySize=500
-nSamples=100000
+dictionaryFile="/groups/saalfeld/home/bogovicj/reseach/exp/saved_sh_exp/exp0044_learnDictSpams_20140804162832/im_normalized_0mean_dict.h5"
+dictionarySize=50
+nSamples=1000
 niters=100
 
-run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "a TEST" $trainingImg $testImg --patches-out -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3 -v
+#run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "a TEST" $trainingImg $testImg --patches-out -n $nSamples -k $dictionarySize -r 4 -p "9-9-9" -t $niters -f 3 -v
+
+run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "a TEST" $trainingImg $testImg --dictionary-in $dictionaryFile --patches-out -n $nSamples -r 4 -p "9-9-9" -f 3 
 
 #for lam in "0.001" "0.01" "0.1" "0.25" "0.5" 
 #do

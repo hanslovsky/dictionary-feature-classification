@@ -6,10 +6,10 @@ import spams
 import scipy.ndimage.filters as sp
 from scipy.interpolate import interp1d
 
-def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=None):
+def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=None, kind='avg'):
     if dsfactor is not None:
-        X_useme,dsz  = downsamplePatchList( X, patchSize, dsfactor)
-        D_useme,Ddsz = downsamplePatchList( D, patchSize, dsfactor )
+        X_useme,dsz  = downsamplePatchList( X, patchSize, dsfactor, kind=kind )
+        D_useme,Ddsz = downsamplePatchList( D, patchSize, dsfactor, kind=kind )
 
         if patchFnGrp:
             patchFnGrp.create_dataset('patchesDown', data=X_useme)
@@ -17,8 +17,7 @@ def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=N
         X_useme = X
         D_useme = D
 
-    if lam is not None:
-        print "dictEval - inconsistent patch size"
+    if lam is None:
         lam = param['lambda1']
 
     alpha = spams.lasso( np.asfortranarray(X_useme), D = np.asfortranarray(D_useme), **param )
@@ -38,7 +37,7 @@ def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=N
     return R
 
 
-def downsamplePatchList( patchList, patchSize, factor ):
+def downsamplePatchList( patchList, patchSize, factor, kind='avg' ):
     (M,N) = patchList.shape
 
     # check that patch vector length is consistent w/ patchSize
@@ -49,7 +48,7 @@ def downsamplePatchList( patchList, patchSize, factor ):
     for i in range(0,N):
 
         patch = np.reshape( patchList[:,i], patchSize )
-        patch_ds = downsamplePatch3d( patch, factor, 0.5, 0.5 )
+        patch_ds = downsamplePatch3d( patch, factor, 0.5, 0.5, kind=kind )
 
         if i == 0:
             patchOutSz = patch_ds.shape
@@ -130,11 +129,30 @@ def extrap1dLinear(interpolator):
 
     return ufunclike  
 
-def downsamplePatch3d( patchIn, factor, sourceSigmas, targetSigmas ):
+def downsamplePatch3d( patchIn, factor, sourceSigmas, targetSigmas, kind='gaussian' ):
+    if kind == 'gaussian':
+        return downsamplePatch3dGauss( patchIn, factor, sourceSigmas, targetSigmas)
+    else:
+        return downsamplePatch3dAvgZ( patchIn, factor )
+
+
+def downsamplePatch3dAvgZ( patchIn, factor ):
+    if not np.isscalar( factor ):
+        zfactor = factor[2]
+    else:
+        zfactor = factor
+
+    sz = patchIn.shape
+    patchOut = patchIn.reshape(-1,factor[2]).mean(axis=1).reshape(sz[0],sz[1],sz[2]/zfactor)
+    return patchOut
+
+
+def downsamplePatch3dGauss( patchIn, factor, sourceSigmas, targetSigmas  ):
     tmp = factor * targetSigmas
     sig = np.sqrt( tmp * tmp - sourceSigmas * sourceSigmas )
     #print sig
 
+    
     half = (np.float32(factor) - 1) / 2
 
     #patchOut = sp.gaussian_filter( patchIn, (0,0,0.8) ) 
@@ -157,3 +175,5 @@ def downsamplePatch3d( patchIn, factor, sourceSigmas, targetSigmas ):
     patchOut = patchIn[ x, y, z ] 
     
     return patchOut
+
+
