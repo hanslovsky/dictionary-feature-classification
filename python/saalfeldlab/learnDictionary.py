@@ -167,6 +167,10 @@ if __name__ == "__main__":
             print " TRAIN objective function on downsampled value: %f" % Ru
             print 'time of computation for objective function: %f' % t
 
+            # upsample test
+            Ruu = evaluation.upsampEval( X, ds, patchSize, patchFnGrp=paramGrpTst, kind='avg' )
+            print " objective function on downsampled NN upsampled value: %f" % Ruu
+
     if args.test_image:
         # read the image
         ft = h5py.File( args.test_image )
@@ -182,7 +186,6 @@ if __name__ == "__main__":
         print " TEST objective function value: %f" % Rt 
         print 'time of computation for objective function: %f' % t
 
-
         if patches_out:
             print "Writing testing patches"
             paramGrpTst = patchFn.create_group("testing")
@@ -195,9 +198,12 @@ if __name__ == "__main__":
             Rtu = evaluation.dictEval( Xt, D, lparam, lam=0, dsfactor=ds, patchSize=patchSize, patchFnGrp=paramGrpTst )
             toc = time.time()
             t = toc - tic
-            print " TEST objective function on downsampled value: %f" % Rtu 
+            print "TEST objective function on downsampled value: %f" % Rtu 
             print 'time of computation for objective function: %f' % t
 
+            # upsample test
+            Rtuu = evaluation.upsampEval( Xt, ds, patchSize, patchFnGrp=paramGrpTst, kind='avg' )
+            print " objective function on downsampled NN upsampled value: %f" % Rtuu
 
     # Write the dictionary
     if args.output:

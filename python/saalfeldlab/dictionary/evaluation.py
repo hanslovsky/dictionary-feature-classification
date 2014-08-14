@@ -6,6 +6,23 @@ import spams
 import scipy.ndimage.filters as sp
 from scipy.interpolate import interp1d
 
+def upsampEval( X, dsfactor, patchSize, patchFnGrp=None, kind='avg' ):
+    if dsfactor is not None:
+        X_useme,dsz  = downsamplePatchList( X, patchSize, dsfactor, kind=kind )
+
+        if patchFnGrp:
+            patchFnGrp.create_dataset('patchesDown2', data=X_useme)
+
+    Xre = upsamplePatchList( X_useme, dsz, dsfactor )
+
+    if patchFnGrp:
+        patchFnGrp.create_dataset('patchesUpsampled', data=Xre)
+
+    xd = X - Xre 
+    R = np.mean( (xd * xd).sum(axis=0))
+
+    return R
+
 def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=None, kind='avg'):
     if dsfactor is not None:
         X_useme,dsz  = downsamplePatchList( X, patchSize, dsfactor, kind=kind )
@@ -31,7 +48,7 @@ def dictEval( X, D, param, lam=None, dsfactor=None, patchSize=None, patchFnGrp=N
     R = np.mean( (xd * xd).sum(axis=0))
 
     if lam > 0:
-        print "dictEval - lambda: ", lam
+        print "   dictEval - lambda: ", lam
         R = R + lam * np.mean( np.abs(alpha).sum(axis=0))
 
     return R
@@ -129,7 +146,7 @@ def extrap1dLinear(interpolator):
 
     return ufunclike  
 
-def downsamplePatch3d( patchIn, factor, sourceSigmas, targetSigmas, kind='gaussian' ):
+def downsamplePatch3d( patchIn, factor, sourceSigmas, targetSigmas, kind='avg' ):
     if kind == 'gaussian':
         return downsamplePatch3dGauss( patchIn, factor, sourceSigmas, targetSigmas)
     else:
