@@ -2,6 +2,49 @@ import numpy as np
 import itertools
 import math
 
+def getPatchesExp( img, patchSize, N=-1, samples_in_cols=True, order='F'):
+    print "getting patches experimental"
+    pNumel = np.prod(patchSize)
+    nDim   = patchSize.shape[0]
+
+    sz = img.shape 
+    impr = patchify( img, patchSize ).reshape( -1, np.prod( patchSize ))
+    totNumPatches = impr.shape[0]
+
+    if N > 0 :
+        print "grabbing ", N, " patches"
+        i = np.random.random_integers( 0, totNumPatches, N )
+        patchList = impr[i,...]
+    else:
+        patchList = impr
+
+    return patchList
+
+def patchify( img, patch_shape):
+
+    img = np.ascontiguousarray(img)  # won't make a copy if not needed
+
+    X, Y, Z = img.shape
+    x, y, z = patch_shape
+
+    shape = ((X-x+1), (Y-y+1), (Z-z+1), x, y, z) # number of patches, patch_shape
+    #shape = ( 5, 3 ) # number of patches, patch_shape
+
+    # The right strides can be thought by:
+    # 1) Thinking of `img` as a chunk of memory in C order
+    # 2) Asking how many items through that chunk of memory are needed when indices
+    #    i,j,k,l are incremented by one
+
+    #strides = img.itemsize*np.array([Y, 1, Y, 1])
+    strides = img.itemsize*np.array([Z*Y, Y, 1, Z*Y, Y, 1])
+    #strides = img.itemsize*np.array([ 5, 1 ])
+
+    #print shape
+    #print strides
+
+    return np.lib.stride_tricks.as_strided(img, shape=shape, strides=strides) 
+
+
 def getPatches( img, patchSize, N=-1, samples_in_cols=True, order='F'):
 
     pNumel = np.prod(patchSize)
