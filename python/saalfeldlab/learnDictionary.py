@@ -36,8 +36,9 @@ if __name__ == "__main__":
     parser.add_argument( '--iterations', '-t', default=1000, type=int,
           help='Dictionary learning iterations' )
     parser.add_argument( '--batch-size', '-b', default=100, type=int, help="Batch size")
-#    parser.add_argument( '--objective-function', '-j', default=False, type=bool,
-#          help="Compute and print value of objective function")
+
+    parser.add_argument( '--objective-function', dest='do_objective', action='store_true',
+          help="Compute and print value of objective function")
 
     parser.add_argument( '--patches-out', default='', type=str, 
             help='File in which to write patches')
@@ -131,6 +132,14 @@ if __name__ == "__main__":
         print 'time of computation for Dictionary Learning: %f' % t 
 
 
+    ###############################
+    lst = [ 'L','lambda1','lambda2','mode','pos','ols','numThreads','length_path','verbose','cholesky']
+    lparam = {'return_reg_path' : False}
+    for x in lst:
+        if x in params:
+            lparam[x] = params[x]
+    ###############################
+
     paramGrpTrn=None
     paramGrpTst=None
     if patches_out:
@@ -138,17 +147,11 @@ if __name__ == "__main__":
         paramGrpTrn = patchFn.create_group("training")
         paramGrpTrn.create_dataset("patches", data=X)
 
-    #if args.objective_function:
-    if True:
+    R = None
+    #if True:
+    if args.do_objective: 
         print "computing objective function"
 
-        ###############################
-        lst = [ 'L','lambda1','lambda2','mode','pos','ols','numThreads','length_path','verbose','cholesky']
-        lparam = {'return_reg_path' : False}
-        for x in lst:
-            if x in params:
-                lparam[x] = params[x]
-        ###############################
 
         tic = time.time()
         R = evaluation.dictEval( X, D, lparam )
@@ -156,20 +159,23 @@ if __name__ == "__main__":
         t = toc - tic
         print " TRAIN objective function value: %f" % R
         print 'time of computation for objective function: %f' % t
+    else:
+        print "Skipping objective function"
 
-        if doUpTest:
-            tic = time.time()
-            #Xd,dsPatchSz = evaluation.downsamplePatchList( X, patchSize, ds)
-            #Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
-            Ru = evaluation.dictEval( X, D, lparam, lam=0, dsfactor=ds, patchSize=patchSize, patchFnGrp=paramGrpTrn)
-            toc = time.time()
-            t = toc - tic
-            print " TRAIN objective function on downsampled value: %f" % Ru
-            print 'time of computation for objective function: %f' % t
+    if doUpTest:
+        tic = time.time()
+        #Xd,dsPatchSz = evaluation.downsamplePatchList( X, patchSize, ds)
+        #Dd,tmp2 = evaluation.downsamplePatchList( D, patchSize, ds)
+        Ru = evaluation.dictEval( X, D, lparam, lam=0, dsfactor=ds, patchSize=patchSize, patchFnGrp=paramGrpTrn)
+        toc = time.time()
+        t = toc - tic
+        print " TRAIN objective function on downsampled value: %f" % Ru
+        print 'time of computation for objective function: %f' % t
 
-            # upsample test
-            Ruu = evaluation.upsampEval( X, ds, patchSize, patchFnGrp=paramGrpTst, kind='avg' )
-            print " objective function on downsampled NN upsampled value: %f" % Ruu
+        # upsample test
+        Ruu = evaluation.upsampEval( X, ds, patchSize, patchFnGrp=paramGrpTst, kind='avg' )
+        print " objective function on downsampled NN upsampled value: %f" % Ruu
+
 
     if args.test_image:
         # read the image
@@ -178,13 +184,17 @@ if __name__ == "__main__":
         ft.close()
         # grab the patches 
         Xt = patches.getPatches( imt, patchSize, N ) 
-        # Compute representation
-        tic = time.time()
-        Rt = evaluation.dictEval( Xt, D, lparam )
-        toc = time.time()
-        t = toc - tic
-        print " TEST objective function value: %f" % Rt 
-        print 'time of computation for objective function: %f' % t
+
+        if args.do_objective:
+            # Compute representation
+            tic = time.time()
+            Rt = evaluation.dictEval( Xt, D, lparam )
+            toc = time.time()
+            t = toc - tic
+            print " TEST objective function value: %f" % Rt 
+            print 'time of computation for objective function: %f' % t
+        else:
+            print "Skipping TEST objective function"
 
         if patches_out:
             print "Writing testing patches"
@@ -211,7 +221,8 @@ if __name__ == "__main__":
 
         h5out = h5py.File( args.output, 'a' )
         h5out.create_dataset("dict", data=D)
-        h5out.create_dataset("objective", data=R)
+        if R:
+            h5out.create_dataset("objective", data=R)
 
         # save parameters
         paramGroup = h5out.create_group("param")

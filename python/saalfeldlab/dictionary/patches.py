@@ -17,6 +17,12 @@ def getPatchesExp( img, patchSize, N=-1, samples_in_cols=True, order='F'):
         patchList = impr[i,...]
     else:
         patchList = impr
+      
+    if samples_in_cols:
+        patchList = np.transpose( patchList )
+
+    if order == 'F':
+        patchList = np.asfortranarray( patchList )
 
     return patchList
 
@@ -37,10 +43,6 @@ def patchify( img, patch_shape):
 
     #strides = img.itemsize*np.array([Y, 1, Y, 1])
     strides = img.itemsize*np.array([Z*Y, Y, 1, Z*Y, Y, 1])
-    #strides = img.itemsize*np.array([ 5, 1 ])
-
-    #print shape
-    #print strides
 
     return np.lib.stride_tricks.as_strided(img, shape=shape, strides=strides) 
 
@@ -51,34 +53,48 @@ def getPatches( img, patchSize, N=-1, samples_in_cols=True, order='F'):
     pRad   = (patchSize-1)/2
     nDim   = patchSize.shape[0]
 
-    sz = img.shape 
+    sz = img.shape  
+    print sz
+    print pNumel
 
     if N > 0 :
         #print "grabbing ", N, " patches"
         startIdx = pRad 
         endIdx   = sz - pRad - 1
-        coords = np.zeros( [nDim, N] )
+        #coords = np.zeros( [nDim, N] )
+        coords = np.zeros( [nDim] )
 
         # Strictly speaking, this does sampling with replacement
         # but duplicate values are unlikely for N << numel(img)
         # TODO consider a sampling without replacement
-        for d in range( 0, nDim ):
-           coords[d,:] = np.random.random_integers( startIdx[d], endIdx[d], N ) 
+        #for d in range( 0, nDim ):
+        #   coords[d,:] = np.random.random_integers( startIdx[d], endIdx[d], N ) 
 
         if samples_in_cols:
             patchList = np.zeros( [pNumel, N], order=order)
         else:
             patchList = np.zeros( [N, pNumel], order=order)
-            
-        for i in range(0,N):
-            thisPatch = img[ coords[0,i]-pRad[0] : coords[0,i]+pRad[0]+1, 
-                             coords[1,i]-pRad[1] : coords[1,i]+pRad[1]+1, 
-							 coords[2,i]-pRad[2] : coords[2,i]+pRad[2]+1 ]
 
-            if samples_in_cols:
-                patchList[:,i] = thisPatch.flatten()
-            else:
-                patchList[i,:] = thisPatch.flatten()
+        print patchList.shape
+            
+        #for i in range(0,N):
+        i = 0
+        while i < N:
+            for d in range( 0, nDim ):
+                coords = np.random.random_integers( startIdx[d], endIdx[d], 3 ) 
+
+            thisPatch = img[ coords[0]-pRad[0] : coords[0]+pRad[0]+1, 
+                             coords[1]-pRad[1] : coords[1]+pRad[1]+1, 
+							 coords[2]-pRad[2] : coords[2]+pRad[2]+1 ]
+
+            # patch should be at least 3/4 nonzero
+            if np.float32( np.count_nonzero( thisPatch  )) / thisPatch.size > 0.75:
+                if samples_in_cols:
+                    patchList[:,i] = thisPatch.flatten()
+                else:
+                    patchList[i,:] = thisPatch.flatten()
+
+                i = i + 1
 
     else:
         #print "grabbing all patches"

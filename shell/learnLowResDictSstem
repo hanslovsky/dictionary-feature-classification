@@ -1,0 +1,20 @@
+#!/bin/bash
+
+pydir="/groups/saalfeld/home/bogovicj/dev/main/dictionary-feature-classification/python/saalfeldlab"
+
+trainingImg="/nobackup/saalfeld/john/dictionarySstem/fly-bock-63-elastic_dataRaw.h5"
+testImg="/nobackup/saalfeld/john/dictionarySstem/fly-bock-63-elastic_dataRaw.h5"
+
+dictionarySize=2000
+nSamples=1000000
+niters=2000
+lam="0.15"
+patchSize="1-11-11"
+
+for dictionarySize in 250 500 1000 1500 2000
+do
+    echo $dictionarySize
+    sleep 1
+    run_script "qsub -pe batch 4 -cwd -V" learnDictSpams "2d dictionary learning vary dict size $dictionarySize" $trainingImg $testImg -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters -l $lam -v
+done
+
