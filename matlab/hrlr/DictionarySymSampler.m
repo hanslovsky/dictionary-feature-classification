@@ -25,9 +25,8 @@ classdef DictionarySymSampler < handle
         rotProbs;   % probabilities of possible rotations
         shiftProbs; %  probabilities of possible shifts
 
-        rotXfm;
-        flipXXfm;
-        flipZXfm;
+        rotXfmIdx;
+        shiftXfmIdx;
 
     end
 
@@ -46,8 +45,7 @@ classdef DictionarySymSampler < handle
             this.D = D;
             this.patchSize = vecToRowCol( patchSize, 'row' );
 
-            this.numVars      = size(D,1); 
-            this.numDictElems = size(D,2); 
+            [ this.numVars, this.numDictElems ] = size(D); 
 
             % check that patchSize is compatible with dictionary size
             if ( prod( patchSize ) ~= this.numVars )
@@ -61,7 +59,10 @@ classdef DictionarySymSampler < handle
 
             % Fill in default values
             if( ~exist('rotRng','var') || isempty( rotRng ))
-                rotRng = [ 90 180 270 ];
+                %rotRng = [ 90 180 270 ];
+                [mi,mj,mk] = meshgrid( 0:1, 0:1, 0:11);
+                v = 32*mi + 16*mj + mk;
+                rotRng = sort(v(:));
             else
                 this.rotRng = rotRng;
             end
@@ -75,7 +76,8 @@ classdef DictionarySymSampler < handle
             if( ~exist('shiftRng','var') || isempty( shiftRng ))
                 this.shiftRng = [];
             else
-                this.shiftRng = shiftRng;
+            %    this.shiftRng = vecToRowCol(shiftRng, 'col');
+                 this.shiftRng = shiftRng;
             end
             
             if( ~exist('shiftProb','var') || isempty( shiftProb ))
@@ -84,20 +86,22 @@ classdef DictionarySymSampler < handle
                 this.shiftProbs = shiftProb;
             end
 
+            genVectorTransformations( this );
+
         end % Constructor
         
         % Returns N observations under the distribution described by
         % this object
         function X = sample(this,N)
 
-            elemSamps  = logical(mnrnd( 1, this.dictProbs, N ));
-            rngSamps   = logical(mnrnd( 1,   this.rngProb, N ));
-            shiftSamps = logical(mnrnd( 1, this.shiftProb, N ));
+            elemSamps  = logical(mnrnd( 1, this.dictProbs,  N ));
+            rotSamps   = logical(mnrnd( 1,  this.rotProbs,  N ));
+            shiftSamps = logical(mnrnd( 1, this.shiftProbs, N ));
 
-            m = [1:N]';
-            elemSamps  = elemSamps  * m;
+            %m = [1:N]';
+            %elemSamps  = elemSamps  * m;
 
-            X = xfmPatches( this, D(:, elemSamps), rotSamps, flipSamps );
+            X = xfmPatches( this, this.D(:, elemSamps), rotSamps, shiftSamps );
                             
         end
 
@@ -110,7 +114,7 @@ classdef DictionarySymSampler < handle
         function genVectorTransformations( this )
             % possible transformations include
             this.rotXfm = xfmToIdx( cubeSymmetry(), this.patchSize );
-
+            this.shiftXfm = shiftToIdx( this.shiftRng, this.patchSize );
         end
 
         function genAtomicVectorTransformations( this )
@@ -139,14 +143,34 @@ classdef DictionarySymSampler < handle
 
     methods( Static )
 
-        function D = standardDictionary1()
+        function D = standardDictionary2d()
+            D = zeros( 9, 4 );
 
-            corner = [ 0 0 0; 0 1 0; 0 1 1 ];
-            edgeM  = [ 0 0 0; 1 1 1; 0 0 0 ];
-            edgeE  = [ 1 1 1; 0 0 0; 0 0 0 ];
-            edgeD  = [ 1 0 0; 0 1 0; 0 0 1 ];
-            blob   = [ 1 1 0; 1 1 0; 0 0 0 ];
+            D(:,1) = reshape([ 0 0 0; 0 1 0; 0 1 1 ], [], 1); % corner
+            D(:,2) = reshape([ 0 0 0; 1 1 1; 0 0 0 ], [], 1); % edgeM
+            D(:,3) = reshape([ 1 1 1; 0 0 0; 0 0 0 ], [], 1); % edgeE
+            D(:,4) = reshape([ 1 1 0; 1 1 0; 0 0 0 ], [], 1); % blob
 
+            edgeD  = [ 1 0 0; 0 1 0; 0 0 1 ]; % edgeD
+            
+        end
+        function D = simpleDictionary3d()
+            corner = cat(3, [ 0 0 0; 0 1 1; 0 1 0 ], ...
+                            [ 0 0 0; 0 1 1; 0 1 0 ], ...
+                            [ 0 0 0; 0 1 1; 0 1 0 ] );
+
+            blob = cat(3, [ 0 0 0; 0 0 0; 0 0 0 ], ...
+                          [ 0 0 0; 0 1 1; 0 1 1 ], ...
+                          [ 0 0 0; 0 1 1; 0 1 1 ] );
+
+            D = zeros( 27, 4 );
+
+            D(:,1) = corner; 
+            D(:,2) = reshape([ 0 0 0; 1 1 1; 0 0 0 ], [], 1); % edgeM
+            D(:,3) = reshape([ 1 1 1; 0 0 0; 0 0 0 ], [], 1); % edgeE
+            D(:,4) = blob;
+
+            
         end
 
     end
