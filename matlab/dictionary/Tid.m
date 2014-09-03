@@ -8,6 +8,8 @@ classdef Tid < handle
     properties ( SetAccess = private )
 
         D;      % The dictionary elements
+        Dxfm;   % The full dictionary
+
         params; % dictionary learning parameters
         bigIters = 1;
         dictDist = 'euclidean';
@@ -46,6 +48,8 @@ classdef Tid < handle
                 this.params = params;
             end
 
+            genVectorTransformations( this );
+
         end % constructor
 
 
@@ -54,7 +58,7 @@ classdef Tid < handle
 
             this.D = mexTrainDL( this.X, this.params );
 
-            for iter = 1:bigIters
+            for iter = 1:this.bigIters
                
                 % initialize with previous dictionary
                 this.params.D = this.D;
@@ -65,45 +69,69 @@ classdef Tid < handle
         end % the magic
 
         % Make the dictionary rotationally invariant
-        function makeDictRotInv( )
+        function makeDictRotInv( this )
 
-            K = this.params.K;
-
-            numInvalid = 0;
-            invalid =  zeros(1,K);
-
-            for i = 1:K
-
+            dxsz  = size( this.D, 2); % size of transformed dictionary
+            rxi= cell2mat(this.rotXfmIdx);
+            
+            allIdxs = 1:dxsz;
+            invariantIdxs = true(1,dxsz);
+            
+            for i = allIdxs
                 % check if this index is still valid
                 % it may have been removed at a previous iteration
-                if ( nnz(invalid == i) > 0 )
+                if( ~invariantIdxs(i) )
+                    fprintf('skipping %d\n',i);
                     continue;
                 end
-
-                Dxfm = D(:, i ); 
-                Draw = this.D(:, setdiff( valid, i) );
-
-                pd = pdist2( Dxfm', Draw' );
-
-                % if this is invalid
-                if ( 0 )
-                    numInvalid = numInvalid + 1; 
-                    invalid( numInvalid ) = i;
-                end
-
+                
+                j = setdiff( allIdxs, i );
+                
+                thisXfmDict = this.D( :, i );
+                thisXfmDict = thisXfmDict( rxi );
+                Draw = this.D( :, j );
+                
+                pd = min( pdist2( thisXfmDict', Draw' ), [], 1);
+                similar = ( pd < this.distTol );
+                
+                % update indices of dict elems that are
+                % transformations of this dict element
+                invariantIdxs( allIdxs(j(similar)) ) = false;
+                
             end
-
-
+            
         end % make dict rot inv
 
-        function Dxfm = xfmDict( d )
+        function Dxfm = xfmDict( this )
+            [r,N] = size( this.D );
+            M = length( this.rotXfmIdx );
+            Dxfm = zeros( r, N*M );
+            j = reshape( 1:(N*M), M, [] );
+            for i = 1:N
+                tmp = this.D(:,i);
+                Dxfm(:,j(:,i)) = tmp( cell2mat( this.rotXfmIdx ));
+            end
+        end
+
+        function pruneDict( this )
 
         end
 
-        function fillInDict( ) 
+        function fillInDict( this ) 
 
         end
 
+        function genVectorTransformations( this )
+            % possible transformations include
+
+            % dont reshape the xfmToIdx
+            this.rotXfmIdx = xfmToIdx( cubeSymmetry(), this.patchSize, 0 );
+
+            if( ~isempty( this.rotRng ) )
+                this.rotXfmIdx = this.rotXfmIdx( this.rotRng );
+            end
+
+        end
 
     end % methods
 
