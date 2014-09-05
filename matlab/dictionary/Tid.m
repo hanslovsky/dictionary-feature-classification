@@ -55,8 +55,14 @@ classdef Tid < handle
 
         % Very experimental
         function D = workSomeMagic(this)
-
-            this.D = mexTrainDL( this.X, this.params );
+            
+            try
+                this.D = mexTrainDL( this.X, this.params );
+            catch e
+                disp('no mexTrainDL - choosing dictionary by random sampling');
+                %e
+                this.D = this.X( :, randperm( this.numSamples, this.params.K));
+            end
 
             for iter = 1:this.bigIters
                
@@ -99,6 +105,8 @@ classdef Tid < handle
                 invariantIdxs( allIdxs(j(similar)) ) = false;
                 
             end
+
+            this.D = this.D( :, invariantIdxs );
             
         end % make dict rot inv
 
