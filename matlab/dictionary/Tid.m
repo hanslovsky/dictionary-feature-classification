@@ -115,9 +115,10 @@ classdef Tid < handle
             M = length( this.rotXfmIdx );
             Dxfm = zeros( r, N*M );
             j = reshape( 1:(N*M), M, [] );
+            k =  cell2mat( this.rotXfmIdx );
             for i = 1:N
                 tmp = this.D(:,i);
-                Dxfm(:,j(:,i)) = tmp( cell2mat( this.rotXfmIdx ));
+                Dxfm(:,j(:,i)) = tmp(k);
             end
         end
 
@@ -132,9 +133,19 @@ classdef Tid < handle
         function genVectorTransformations( this )
             % possible transformations include
 
-            % dont reshape the xfmToIdx
-            this.rotXfmIdx = xfmToIdx( cubeSymmetry(), this.patchSize, 0 );
-
+            % comupte the index look-ups for this transformation 
+            % dont reshape them.
+            
+            % check if we're working in 2d or 3d
+            patchSzTmp = this.patchSize( this.patchSize > 1);
+            ndim = length( patchSzTmp );
+            
+            if( ndim ==3 )
+                this.rotXfmIdx = xfmToIdx( cubeSymmetry(), patchSzTmp, 0 );
+            elseif (ndim == 2)
+                this.rotXfmIdx = xfmToIdx( squareSymmetry(), patchSzTmp, 0 );
+            end
+            
             if( ~isempty( this.rotRng ) )
                 this.rotXfmIdx = this.rotXfmIdx( this.rotRng );
             end
