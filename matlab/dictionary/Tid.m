@@ -9,7 +9,11 @@ classdef Tid < handle
 
         D;      % The dictionary elements
         Dxfm;   % The full dictionary
-
+        
+        iMergeDxfms;    % indicates which original dictionary element (D)
+                        % the elements of Dxfm came from
+        mergeFun = @max;
+        
         params; % dictionary learning parameters
         bigIters = 1;
         dictDist = 'euclidean';
@@ -59,12 +63,17 @@ classdef Tid < handle
 
         end % constructor
 
+        function thecopy = copy( this )
+            thecopy = Tid( this.X, this.patchSize, this.params, this.distTol );
+            thecopy.X = [];
+        end
 
         % Very experimental
         function D = buildDictionary(this)
             
             try
                 this.D = mexTrainDL( this.X, this.params );
+                this.makeDictRotInv();
             catch e
                 disp('no mexTrainDL - choosing dictionary by random sampling');
                 %e % print error 
@@ -79,17 +88,74 @@ classdef Tid < handle
                 D = this.D;
             end
 
+            this.Dxfm = this.xfmDict( );
+
         end % the magic
 
-        function alpha = getFeatures( this )
-            try
-                this.D = mexTrainDL( this.X, this.params );
-                alpha = mexLasso( this.X, this.D, this.params );
-            catch e
-                disp('no mexLasso - determining features ');
-                %e % print error 
-                alpha = randn( size(this.X,2), size(this.D,2) );
+        function alpha = getFeatures( this, X, f, params )
+            
+            if( ~exist('f','var'))
+                f = [];
             end
+            if( ~exist('params','var') || isempty(params))
+                prm = this.params;
+            else
+                prm = params;
+            end
+            
+            if( ~isempty( f ))
+               ds = Tid.getDownsampler3dzRs();
+               dict = ds( this.Dxfm, this.patchSize, f ); 
+            else
+               dict = this.Dxfm; 
+            end
+            
+            try
+                alpha = mexLasso( X, dict, prm );
+            catch e
+                disp('no mexLasso - random features');
+                %e % print error 
+                alpha = randn( size(X,2), size(dict,2) );
+            end
+            
+        end
+        
+        function alpha = trainingFeatures( this )
+            alpha = getFeatures( this, this.X );
+            this.alpha = alpha;
+        end
+
+        function alpha = getFeaturesOrig( this, X, f, params )
+            
+            if( ~exist('f','var'))
+                f = [];
+            end
+            if( ~exist('params','var') || isempty(params))
+                prm = this.params;
+            else
+                prm = params;
+            end
+            
+            if( ~isempty( f ))
+               ds = Tid.getDownsampler3dzRs();
+               szds = this.patchSize ./ [1 1 f];
+               dict = ds( this.D, this.patchSize, f ); 
+            else
+               dict = this.D; 
+            end
+            
+            try
+                alpha = mexLasso( X, dict, prm );
+            catch e
+                disp('no mexLasso - random features ');
+                %e % print error 
+                alpha = randn( size(X,2), size(dict,2) );
+            end
+            
+        end
+        
+        function alpha = trainingFeaturesOrig( this )
+            alpha = getFeaturesOrig( this, this.X );
             this.alpha = alpha;
         end
 
@@ -135,12 +201,27 @@ classdef Tid < handle
             Dxfm = zeros( r, N*M );
             j = reshape( 1:(N*M), M, [] );
             k =  cell2mat( this.rotXfmIdx );
+            
             for i = 1:N
                 tmp = this.D(:,i);
                 Dxfm(:,j(:,i)) = tmp(k);
             end
+            
+            this.iMergeDxfms = reshape(repmat( 1:N, M, 1 ), [], 1);
         end
 
+        function alphaM = mergeFeatures( this, alpha )
+            if( isempty( this.iMergeDxfms))
+                alphaM = [];
+                return;
+            end
+            
+            N =  size(this.D, 2);
+            alphaM = zeros( size(this.D, 2) ,1);            
+            for i = 1:N
+                alphaM(i) = this.mergeFun( alpha( this.iMergeDxfms == i ));
+            end
+        end
 
         function genVectorTransformations( this )
             % possible transformations include
@@ -152,7 +233,7 @@ classdef Tid < handle
             patchSzTmp = this.patchSize( this.patchSize > 1);
             ndim = length( patchSzTmp );
             
-            if( ndim ==3 )
+            if( ndim == 3 )
                 this.rotXfmIdx = xfmToIdx( cubeSymmetry(), patchSzTmp, 0 );
             elseif (ndim == 2)
                 this.rotXfmIdx = xfmToIdx( squareSymmetry(), patchSzTmp, 0 );
@@ -178,6 +259,14 @@ classdef Tid < handle
             param.verbose=1;
 
         end
-
+        
+        function downsampler = getDownsampler3dz()
+            downsampler = @(X,f)(permute(reshape(mean(reshape( permute(x, [3 2 1]), f, [] )), sz([3 2 1])./[f 1 1]), [3 2 1]));
+        end
+        
+        function downsamplerRs = getDownsampler3dzRs()
+            downsamplerRs = @(X,sz,f) (reshape(permute(reshape(mean(reshape(permute( reshape(X, [sz size(X,2)] ), [ 3 2 1 4]), f, [])), [sz(3)./f sz(1) sz(2) size(X,2)]), [ 3 2 1 4]), [], size(X,2) )); 
+        end
+        
     end % static methods
 end % Tid class

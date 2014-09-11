@@ -195,7 +195,7 @@ classdef DictionarySymSampler < handle
             edgeD  = [ 1 0 0; 0 1 0; 0 0 1 ]; % edgeD
             
         end
-        function D = simpleDictionary3d()
+        function [D,sz] = simpleDictionary3d()
             corner = cat(3, [ 0 0 0; 0 1 1; 0 1 0 ], ...
                             [ 0 0 0; 0 1 1; 0 1 0 ], ...
                             [ 0 0 0; 0 1 1; 0 1 0 ] );
@@ -213,7 +213,8 @@ classdef DictionarySymSampler < handle
                            [ 0 0 0; 0 0 0; 0 0 0 ] );
 
             D = zeros( 27, 4 );
-
+            sz = size( corner );
+            
             D(:,1) = corner(:); 
             D(:,2) = edgeM(:); 
             D(:,3) = edgeE(:); 
@@ -221,30 +222,30 @@ classdef DictionarySymSampler < handle
             
         end
 
-        function D = dctDictionary3d( sz, N )
+        function [D, ks] = dctDictionary3d( sz, N )
 
             ndim = length( sz );
             [x,y,z] = ndgrid( 0:sz(1)-1, 0:sz(2)-1, 0:sz(3)-1);
             
-            dctc = @(x, kx, y, ky, z, kz) ( cos( (pi./max(x(:))) .* ( x + 0.5 ) .* kx ) .* ...
-                cos( (pi./max(y(:))) .* ( y + 0.5 ) .* ky ) .* ...
-                cos( (pi./max(z(:))) .* ( z + 0.5 ) .* kz ) );
+            dctc = @(x, kx, y, ky, z, kz) ( ...
+                    cos( (pi./max(x(:))) .* ( x + 0.5 ) .* kx ) .* ...
+                    cos( (pi./max(y(:))) .* ( y + 0.5 ) .* ky ) .* ...
+                    cos( (pi./max(z(:))) .* ( z + 0.5 ) .* kz ) );
             
-            % select N non-overlapping permutations 
-            % of the range [0 max]
-            % where max is the max dimension of the patch
-%             ks = perms( 0 : max( sz )-1 );
-%             size(ks)
-%             ks = ks( randperm( size(ks,1), N ), : );
-%             size(ks)
-
-
+            
+            % choose the combinations of interes
+            allKCombs = nchoosek( 0:min(sz), 3 );
+            allKCombs = allKCombs( randperm( size(allKCombs,1)), : );
+            ks = allKCombs( 1:N, : );
+            
             % just go with a random permutation
-            D = zeros( prod(sz), N );
+            D  = zeros( prod(sz), N );
             for i = 1:N
-                ks = randperm( max(sz), 3 ) - 1;
+                % thisk = randperm( max(sz)-2, 3 ) - 1;
+                % ks( i, : ) = thisk;
                 
-                f = dctc( x, ks(1), y, ks(2), z, ks(3) );
+                thisk = allKCombs(i,:);
+                f = dctc( x, thisk(1), y, thisk(2), z, thisk(3) );
                 D(:,i) = f(:);
             end
             
