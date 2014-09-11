@@ -19,7 +19,7 @@ X = dss.sample( 1000 );
 Xds = downsamplerRs( X, patchSize, f ); 
 
 tid = Tid( X, patchSize, Tid.defaultParams() );
-tid.workSomeMagic();
+tid.buildDictionary();
 tid.makeDictRotInv();
 
 

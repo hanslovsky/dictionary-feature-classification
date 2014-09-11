@@ -100,8 +100,9 @@ classdef DictionarySymSampler < handle
         end % Constructor
         
         % Returns N observations under the distribution described by
-        % this object
-        function X = sample(this,N)
+        % this object, and the indices of the dictionary from which each
+        % sample was drawn
+        function [X,elemSamps] = sample(this,N)
 
             elemSamps  = logical(mnrnd( 1, this.dictProbs,  N ));
             rotSamps   = logical(mnrnd( 1,  this.rotProbs,  N ));
@@ -220,6 +221,34 @@ classdef DictionarySymSampler < handle
             
         end
 
+        function D = dctDictionary3d( sz, N )
+
+            ndim = length( sz );
+            [x,y,z] = ndgrid( 0:sz(1)-1, 0:sz(2)-1, 0:sz(3)-1);
+            
+            dctc = @(x, kx, y, ky, z, kz) ( cos( (pi./max(x(:))) .* ( x + 0.5 ) .* kx ) .* ...
+                cos( (pi./max(y(:))) .* ( y + 0.5 ) .* ky ) .* ...
+                cos( (pi./max(z(:))) .* ( z + 0.5 ) .* kz ) );
+            
+            % select N non-overlapping permutations 
+            % of the range [0 max]
+            % where max is the max dimension of the patch
+%             ks = perms( 0 : max( sz )-1 );
+%             size(ks)
+%             ks = ks( randperm( size(ks,1), N ), : );
+%             size(ks)
+
+
+            % just go with a random permutation
+            D = zeros( prod(sz), N );
+            for i = 1:N
+                ks = randperm( max(sz), 3 ) - 1;
+                
+                f = dctc( x, ks(1), y, ks(2), z, ks(3) );
+                D(:,i) = f(:);
+            end
+            
+        end
     end
 
 end

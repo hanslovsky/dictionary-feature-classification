@@ -79,7 +79,8 @@ end
 
 alpha = mexLasso( Xdown, Dd, param);
 
-
+% hallucinate high-res
+Xhr = D * alpha 
 
 
 %%

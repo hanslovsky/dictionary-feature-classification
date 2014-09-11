@@ -15,7 +15,8 @@ classdef Tid < handle
         dictDist = 'euclidean';
         distTol  = 0.1;
 
-        X; % The data
+        X;      % The data
+        alpha;  % The dictionary coefficients
 
         numSamples;
         numVars;
@@ -30,8 +31,14 @@ classdef Tid < handle
     methods
 
         % Constructor
-        function this = Tid( X, patchSize, params )
+        function this = Tid( X, patchSize, params, distTol )
 
+            if( ~exist( 'distTol', 'var') || isempty(distTol))
+                this.distTol = 0.1;    
+            else
+                this.distTol = distTol;
+            end
+                
             this.X = X;  % the data
             [this.numVars, this.numSamples] = size( X );
 
@@ -54,13 +61,13 @@ classdef Tid < handle
 
 
         % Very experimental
-        function D = workSomeMagic(this)
+        function D = buildDictionary(this)
             
             try
                 this.D = mexTrainDL( this.X, this.params );
             catch e
                 disp('no mexTrainDL - choosing dictionary by random sampling');
-                %e
+                %e % print error 
                 this.D = this.X( :, randperm( this.numSamples, this.params.K));
             end
 
@@ -73,6 +80,18 @@ classdef Tid < handle
             end
 
         end % the magic
+
+        function alpha = getFeatures( this )
+            try
+                this.D = mexTrainDL( this.X, this.params );
+                alpha = mexLasso( this.X, this.D, this.params );
+            catch e
+                disp('no mexLasso - determining features ');
+                %e % print error 
+                alpha = randn( size(this.X,2), size(this.D,2) );
+            end
+            this.alpha = alpha;
+        end
 
         % Make the dictionary rotationally invariant
         function makeDictRotInv( this )
@@ -121,13 +140,6 @@ classdef Tid < handle
             end
         end
 
-        function pruneDict( this )
-
-        end
-
-        function fillInDict( this ) 
-
-        end
 
         function genVectorTransformations( this )
             % possible transformations include
