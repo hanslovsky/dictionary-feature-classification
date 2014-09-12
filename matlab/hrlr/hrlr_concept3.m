@@ -16,16 +16,20 @@ f = 3; % downsampling factor
 Ntrain = 1000;
 Ntest  = 1000;
 
+classifierOpts = {  'kernel_function', 'rbf' };
+
 patchSize = [9 9 9];
 segProbs = [ 0.5 0.5 ];
-numDict   = 30;
+numDict   = 12;
 distTol   = 0.1;
 patchSizeDs = patchSize ./ [1 1 f];
 [Dtrue, ks] = DictionarySymSampler.dctDictionary3d( patchSize, numDict );
 
 params = Tid.defaultParams();
-params.K = 70;
+params.K = 100;
 params.lambda = 0.1;
+
+
 
 %% visualize true dictionary 
 
@@ -58,13 +62,13 @@ tid.buildDictionary();
 
 %%
 
-tid.trainingFeatures( );
-
-alpha_ds = tid.getFeaturesOrig( Xds, f ); 
-alpha_ds_test = tid.getFeaturesOrig( Xds_test, f );
-
-alpha_ds_xfm = tid.getFeatures( Xds, f );
-alpha_ds_test_xfm = tid.getFeatures( Xds_test, f );
+% tid.trainingFeatures( );
+% 
+% alpha_ds = tid.getFeaturesOrig( Xds, f ); 
+% alpha_ds_test = tid.getFeaturesOrig( Xds_test, f );
+% 
+% alpha_ds_xfm = tid.getFeatures( Xds, f );
+% alpha_ds_test_xfm = tid.getFeatures( Xds_test, f );
 
 
 %% visualize the dictionary (for fun)
@@ -106,60 +110,80 @@ tidLR.buildDictionary();
 % be better for segmentationt that a dictionary build directly from 
 % the low-res data
 
+%%  classifiers on original HR data for baseline 
+
+[ svm, trn_pred, trn_err, ...
+            tst_pred, tst_err ] = classifyEvaluateSvm( alpha', alpha_test', ...
+                                                labels_true, labels_test, classifierOpts );
+
+fprintf('high-res xfm pooled err rate (train) : %f\n',   trn_err );
+fprintf('high-res xfm pooled error rate (test)  : %f\n', tst_err );
+
 %% classifiers on original HR data for baseline 
 
-alpha = tid.getFeaturesOrig( X );
-alpha_test = tid.getFeaturesOrig( X_test );
-
-svm   = svmtrain(  alpha', labels_true, 'kernel_function', 'rbf' );
-
-lab_pred_trn = svmclassify( svm, alpha' );
-trn_err_hr = ( lab_pred_trn - labels_true );
-trn_errRate_hr = nnz( trn_err_hr ) ./ length( trn_err_hr );
-
-lab_pred_test = svmclassify( svm, alpha_test' );
-err_hr = ( lab_pred_test - labels_test );
-errRate_hr = nnz( err_hr ) ./ length( err_hr );
-
-fprintf('high-res error rate (train) : %f\n', trn_errRate_hr );
-fprintf('high-res error rate (test)  : %f\n', errRate_hr );
+% alpha = tid.getFeaturesOrig( X );
+% alpha_test = tid.getFeaturesOrig( X_test );
+% 
+% svm   = svmtrain(  alpha', labels_true, 'kernel_function', 'rbf' );
+% 
+% lab_pred_trn = svmclassify( svm, alpha' );
+% trn_err_hr = ( lab_pred_trn - labels_true );
+% trn_errRate_hr = nnz( trn_err_hr ) ./ length( trn_err_hr );
+% 
+% lab_pred_test = svmclassify( svm, alpha_test' );
+% err_hr = ( lab_pred_test - labels_test );
+% errRate_hr = nnz( err_hr ) ./ length( err_hr );
+% 
+% fprintf('high-res error rate (train) : %f\n', trn_errRate_hr );
+% fprintf('high-res error rate (test)  : %f\n', errRate_hr );
 
 %% classifiers on original HR data,  for baseline 
 
-xfm_lasso_prm = params;
-xfm_lasso_prm.lambda = 0.25;
-
-alpha_xfm = tid.getFeatures( X, [], xfm_lasso_prm );
-alpha_test_xfm = tid.getFeatures( X_test, [], xfm_lasso_prm );
-
-svm_xfm = svmtrain(  alpha_xfm', labels_true, 'kernel_function', 'rbf' );
-
-lab_pred_trn_xfm = svmclassify( svm_xfm, alpha_xfm' );
-trn_err_hr_xfm = ( lab_pred_trn_xfm - labels_true );
-trn_errRate_hr_xfm = nnz( trn_err_hr_xfm ) ./ length( trn_err_hr_xfm );
-
-lab_pred_test = svmclassify( svm_xfm, alpha_test_xfm' );
-err_hr_xfm = ( lab_pred_test - labels_test );
-errRate_hr_xfm = nnz( err_hr_xfm ) ./ length( err_hr_xfm );
-
-fprintf('high-res xfm error rate (train) : %f\n', trn_errRate_hr_xfm );
-fprintf('high-res xfm error rate (test)  : %f\n', errRate_hr_xfm );
-
-%% classifiers on original HR data xfm Pool
-
-alpha_xfmM = tid.mergeFeatures( alpha_xfm );
-alpha_test_xfmM = tid.mergeFeatures( alpha_test_xfm );
-
-lab_pred_trn_xfmM = svmclassify( svm_xfm, alpha_xfm' );
-trn_err_hr_xfmM = ( lab_pred_trn_xfmM - labels_true );
-trn_errRate_hr_xfmM = nnz( trn_err_hr_xfmM ) ./ length( trn_err_hr_xfmM );
-
-lab_pred_test = svmclassify( svm_xfm, alpha_test_xfm' );
-err_hr_xfmM = ( lab_pred_test - labels_test );
-errRate_hr_xfmM = nnz( err_hr_xfmM ) ./ length( err_hr_xfmM );
-
-fprintf('high-res xfm pooled error rate (train) : %f\n', trn_errRate_hr_xfmM );
-fprintf('high-res xfm pooled error rate (test)  : %f\n', errRate_hr_xfmM );
+% xfm_lasso_prm = params;
+% xfm_lasso_prm.lambda = 0.25;
+% 
+% alpha_xfm = tid.getFeatures( X, [], xfm_lasso_prm );
+% alpha_test_xfm = tid.getFeatures( X_test, [], xfm_lasso_prm );
+% 
+% svm_xfm = svmtrain(  alpha_xfm', labels_true, 'kernel_function', 'rbf' );
+% 
+% lab_pred_trn_xfm = svmclassify( svm_xfm, alpha_xfm' );
+% trn_err_hr_xfm = ( lab_pred_trn_xfm - labels_true );
+% trn_errRate_hr_xfm = nnz( trn_err_hr_xfm ) ./ length( trn_err_hr_xfm );
+% 
+% lab_pred_test_xfm = svmclassify( svm_xfm, alpha_test_xfm' );
+% err_hr_xfm = ( lab_pred_test_xfm - labels_test );
+% errRate_hr_xfm = nnz( err_hr_xfm ) ./ length( err_hr_xfm );
+% 
+% fprintf('high-res xfm error rate (train) : %f\n', trn_errRate_hr_xfm );
+% fprintf('high-res xfm error rate (test)  : %f\n', errRate_hr_xfm );
+% 
+% %% classifiers on original HR data xfm Pool
+% 
+% alpha_xfmM      = tid.mergeFeatures( alpha_xfm );
+% alpha_test_xfmM = tid.mergeFeatures( alpha_test_xfm );
+% 
+% svm_xfmM = svmtrain(  alpha_xfmM', labels_true, 'kernel_function', 'rbf' );
+% 
+% lab_pred_trn_xfmM = svmclassify( svm_xfmM, alpha_xfmM' );
+% trn_err_hr_xfmM = ( lab_pred_trn_xfmM - labels_true );
+% trn_errRate_hr_xfmM = nnz( trn_err_hr_xfmM ) ./ length( trn_err_hr_xfmM );
+% 
+% lab_pred_test_xfmM = svmclassify( svm_xfmM, alpha_test_xfmM' );
+% err_hr_xfmM = ( lab_pred_test_xfmM - labels_test );
+% errRate_hr_xfmM = nnz( err_hr_xfmM ) ./ length( err_hr_xfmM );
+% 
+% fprintf('high-res xfm pooled error rate (train) : %f\n', trn_errRate_hr_xfmM );
+% fprintf('high-res xfm pooled error rate (test)  : %f\n', errRate_hr_xfmM );
+% 
+% %% classifiers on original HR data xfm Pool
+% 
+% [ svm_xfmM, trn_pred_xfmM, trn_err_xfmM, ...
+%             tst_pred_xfmM, tst_err_xfmM ] = classifyEvaluateSvm( alpha_xfmM', alpha_test_xfmM', ...
+%                                                 labels_true, labels_test, classifierOpts );
+% 
+% fprintf('high-res xfm pooled err rate (train) : %f\n',   trn_err_xfmM );
+% fprintf('high-res xfm pooled error rate (test)  : %f\n', tst_err_xfmM );
 
 %% classifiers on LR data HR dict,  for baseline 
 

@@ -73,11 +73,12 @@ classdef Tid < handle
             
             try
                 this.D = mexTrainDL( this.X, this.params );
-                this.makeDictRotInv();
+%                 this.makeDictRotInv();
             catch e
                 disp('no mexTrainDL - choosing dictionary by random sampling');
                 %e % print error 
                 this.D = this.X( :, randperm( this.numSamples, this.params.K));
+                this.makeDictRotInv();
             end
 
             for iter = 1:this.bigIters
@@ -86,6 +87,7 @@ classdef Tid < handle
                 this.params.D = this.D;
 
                 D = this.D;
+%                 this.makeDictRotInv();
             end
 
             this.Dxfm = this.xfmDict( );
@@ -106,6 +108,7 @@ classdef Tid < handle
             if( ~isempty( f ))
                ds = Tid.getDownsampler3dzRs();
                dict = ds( this.Dxfm, this.patchSize, f ); 
+               dict = dict ./ repmat( sqrt(sum(dict.*dict)), size(dict,1), 1);
             else
                dict = this.Dxfm; 
             end
@@ -138,8 +141,9 @@ classdef Tid < handle
             
             if( ~isempty( f ))
                ds = Tid.getDownsampler3dzRs();
-               szds = this.patchSize ./ [1 1 f];
-               dict = ds( this.D, this.patchSize, f ); 
+               % szds = this.patchSize ./ [1 1 f];
+               dict = ds( this.D, this.patchSize, f );
+               dict = dict ./ repmat( sqrt(sum(dict.*dict)), size(dict,1), 1);
             else
                dict = this.D; 
             end
@@ -185,6 +189,8 @@ classdef Tid < handle
                 pd = min( pdist2( thisXfmDict', Draw' ), [], 1);
                 similar = ( pd < this.distTol );
                 
+                fprintf('excluding %d elems at %d\n', nnz(similar), i );
+                
                 % update indices of dict elems that are
                 % transformations of this dict element
                 invariantIdxs( allIdxs(j(similar)) ) = false;
@@ -217,10 +223,13 @@ classdef Tid < handle
             end
             
             N =  size(this.D, 2);
-            alphaM = zeros( size(this.D, 2) ,1);            
+            S = size(alpha,2); % number of samples
+            alphaM = zeros( N, S ); 
+            
             for i = 1:N
-                alphaM(i) = this.mergeFun( alpha( this.iMergeDxfms == i ));
+                alphaM(i,:) = this.mergeFun( alpha( (this.iMergeDxfms == i), :));
             end
+            
         end
 
         function genVectorTransformations( this )
@@ -256,7 +265,7 @@ classdef Tid < handle
             param.numThreads = 4; % number of threads
             param.batchsize = 100;
             param.iter = 100;
-            param.verbose=1;
+            param.verbose = 0;
 
         end
         

@@ -249,6 +249,8 @@ classdef DictionarySymSampler < handle
                 D(:,i) = f(:);
             end
             
+            % normalize columns
+            D = D ./ repmat( sqrt(sum(D.*D)), size(D,1), 1);
         end
     end
 
