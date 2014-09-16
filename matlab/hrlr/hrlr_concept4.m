@@ -8,8 +8,8 @@ downsamplerRs = Tid.getDownsampler3dzRs();
 %% 3d proof-of-concept ( segmentation )
 
 f = 3; % downsampling factor
-Ntrain = 1000;
-Ntest  = 1000;
+Ntrain = 2000;
+Ntest  = 2000;
 
 classifierOpts = {  'kernel_function', 'rbf' };
 
@@ -114,6 +114,9 @@ tst_alpha_xfmM = tid.mergeFeatures( tid.getFeatures( X_test ));
 fprintf('high-res xfm pooled error rate (train) : %f\n', trn_err_xfmM );
 fprintf('high-res xfm pooled error rate (test)  : %f\n', tst_err_xfmM );
 
+%%
+fprintf('\nEND HR BASELINE\nSTART LR MUST BEAT\n');
+
 %% classification on LR data ( we have to beat this )
 
 trn_alpha_LR = tidLR.getFeaturesOrig( Xds );
@@ -125,6 +128,33 @@ tst_alpha_LR = tidLR.getFeaturesOrig( Xds_test );
 
 fprintf('low-res err rate (train) : %f\n',   trn_err_LR );
 fprintf('low-res error rate (test)  : %f\n', tst_err_LR );
+
+%% classification on LR data xfm ( we have to beat this )
+
+trn_alpha_LR_xfm = tidLR.getFeatures( Xds );
+tst_alpha_LR_xfm = tidLR.getFeatures( Xds_test );
+
+[ svm_LR_xfm, trn_pred_LR_xfm, trn_err_LR_xfm, ...
+              tst_pred_LR_xfm, tst_err_LR_xfm ] = classifyEvaluateSvm( trn_alpha_LR_xfm', tst_alpha_LR_xfm', ...
+                                                labels_train, labels_test, classifierOpts );
+
+fprintf('low-res xfm error rate (train): %f\n', trn_err_LR_xfm );
+fprintf('low-res xfm error rate (test) : %f\n', tst_err_LR_xfm );
+
+%% classification on LR data xfm ( we have to beat this )
+
+trn_alpha_LR_xfm = tidLR.getFeatures( Xds );
+tst_alpha_LR_xfm = tidLR.getFeatures( Xds_test );
+
+[ svm_LR_xfm, trn_pred_LR_xfm, trn_err_LR_xfm, ...
+              tst_pred_LR_xfm, tst_err_LR_xfm ] = classifyEvaluateSvm( trn_alpha_LR_xfm', tst_alpha_LR_xfm', ...
+                                                labels_train, labels_test, classifierOpts );
+
+fprintf('low-res xfm error rate (train): %f\n', trn_err_LR_xfm );
+fprintf('low-res xfm error rate (test) : %f\n', tst_err_LR_xfm );
+
+%%
+fprintf('\nEND HR BASELINE\nSTART LR MUST BEAT\n');
 
 %% classification on LR data HR dictionary
 
@@ -149,3 +179,15 @@ tst_alpha_LRHR_xfm = tid.getFeatures( Xds_test, f );
 
 fprintf('low-res HR dict xfm error rate (train): %f\n', trn_err_LRHR_xfm );
 fprintf('low-res HR dict xfm error rate (test) : %f\n', tst_err_LRHR_xfm );
+
+%% classification on LR data HR dictionary
+
+trn_alpha_LRHR_xfmM = tid.mergeFeatures( tid.getFeatures( Xds, f ));
+tst_alpha_LRHR_xfmM = tid.mergeFeatures( tid.getFeatures( Xds_test, f ));
+
+[ svm_LRHR_xfmM, trn_pred_LRHR_xfmM, trn_err_LRHR_xfmM, ...
+                 tst_pred_LRHR_xfmM, tst_err_LRHR_xfmM ] = classifyEvaluateSvm( trn_alpha_LRHR_xfmM', tst_alpha_LRHR_xfmM', ...
+                                                labels_train, labels_test, classifierOpts );
+
+fprintf('low-res HR dict pooled-xfm error rate (train): %f\n', trn_err_LRHR_xfmM );
+fprintf('low-res HR dict pooled-xfm error rate (test) : %f\n', tst_err_LRHR_xfmM );
