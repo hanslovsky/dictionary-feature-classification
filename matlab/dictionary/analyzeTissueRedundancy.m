@@ -73,7 +73,7 @@ msk = max( msk, [], 4 );
 [pneg,coordsNeg]  = grabPatchesSimple( im, patchSize, N, [], (msk & ~lb) );
 
 % grab specific patches
-pnew = retrieveMatchPatches( patchPointFile, im, patchSize );
+% pnew = retrieveMatchPatches( patchPointFile, im, patchSize );
 
 % downsample the patches
 pposd =  (downsamplerRs( ppos', patchSize, dsfactor))';
@@ -154,10 +154,14 @@ for n = 1:num
     [ cpos{:} cneg{:} ]
     
 %     pause;
-    str = input( 'save to file? ' );
-    if(str2double( str ))
+    dosave = input( 'save to file? ' );
+    if(  dosave > 0 )
+        fprintf('saving...')
        figure(hppos);
-       export_fig(fullfile(destdir,'')); 
+       export_fig(sprintf('%s%sposPatch_id%d_pt_%d-%d-%d', destdir, filesep, n, cpos{1}, cpos{2}, cpos{3} )); 
+       figure(hpneg);
+       export_fig(sprintf('%s%snegPatch_id%d_pt_%d-%d-%d', destdir, filesep, n, cneg{1}, cneg{2}, cneg{3} )); 
+       fprintf('done!\n');
     end
     close all;
     
