@@ -1,4 +1,11 @@
 %% multiHypoConcept
+% run_script('multiHypoConcept', '20k patches, context-full');
+% dbstop if error; run_script('multiHypoConcept', '20k patches, context-prob');
+% dbstop if error; run_script('multiHypoConcept', 'save data');
+
+%%
+global SAVEPATH
+global SAVEPREFIX
 
 %% helper functions
 
@@ -10,6 +17,13 @@ evaluateSVM = @( svm, X )( svmclassify( svm, X ) );
 
 classifyRF = @( X, Y, numTrees, opts )( TreeBagger(numTrees, X, Y, opts{:}) );
 evaluateRF = @( rf, X )( cellfun( @str2double, rf.predict(X)) );
+
+%%
+
+dataLoc = '';
+dataTestLoc = '';
+
+destdir='/data-ssd1/john/projects/dictionary/multiHypo';
 
 %% parameters
 
@@ -24,17 +38,15 @@ patchSizeD = patchSize ./ [1 1 dsfactor];
 numNeighbors = 27;
 
 excludeNeighbors = 1;
-poolingType = 'max';
+poolingType = '';
 
 donorm = 0;
 distMeasure = 'correlation';
 
-destdir='/data-ssd1/john/projects/dictionary/multiHypo';
-
 params = Tid.defaultParams();
-params.K = 50;
-params.iter = 100;
-params.batchsize = 1000;
+params.K = 500;
+params.iter = 200;
+params.batchsize = 100;
 params.verbose = 1;
 
 classify = @( X, Y, opts )( classifyRF( X, Y, 200, opts) );
@@ -71,6 +83,8 @@ nNeg = N - nPos;
 [pposTest,~]  = grabPatchesNeighborhood( im, patchSize, nPos, [], (msk &  lb) );
 [pnegTest,~]  = grabPatchesNeighborhood( im, patchSize, nNeg, [], (msk & ~lb) );
 
+clear im msk lb;
+
 %% build dictionary
 
 if( excludeNeighbors )
@@ -106,6 +120,16 @@ X = X';
 XTest = mexLasso( pTest', D, params );
 XTest = XTest';
 
+if( isempty(dataLoc))
+    save( sprintf('%s/%s_feats_trn.m', SAVEPATH, SAVEPREFIX ), X);
+    save( sprintf('%s/%s_dict.m', SAVEPATH, SAVEPREFIX ), D);
+end
+if( isempty(dataTestLoc))
+    save( sprintf('%s/%s_feats_trn.m', SAVEPATH, SAVEPREFIX ), XTest);
+end
+
+% return;
+
 %% quick analysis
 % 
 % dictPairDist = pdist(  D', distMeasure );
@@ -134,19 +158,21 @@ XTest = XTest';
 % end
 
 %% classification level 1
-X = full( X );
-XTest = full( XTest );
+% X = full( X );
+% XTest = full( XTest );
+% 
+% classifier = classify( X, Y, classopts );
+% 
+% pred       = evaluate( classifier, X );
+% trainingAcc = (length(Y) - nnz(Y - pred))./(length(Y));
+% 
+% predTest       = evaluate( classifier, XTest );
+% testAcc = (length(YTest) - nnz(YTest - predTest))./(length(YTest));
+% 
+% fprintf( '(1) training accuracy: %f\n', trainingAcc );
+% fprintf( '(1) test     accuracy: %f\n', testAcc );
 
-classifier = classify( X, Y, classopts );
-
-pred       = evaluate( classifier, X );
-trainingAcc = (length(Y) - nnz(Y - pred))./(length(Y));
-
-predTest       = evaluate( classifier, XTest );
-testAcc = (length(YTest) - nnz(YTest - predTest))./(length(YTest));
-
-fprintf( '(1) training accuracy: %f\n', trainingAcc );
-fprintf( '(1) test     accuracy: %f\n', testAcc );
+% clear X XTest p pTest
 
 %% setup for classification level 2
 
@@ -158,6 +184,8 @@ pTest2 = [ pposTest; pnegTest ];
 YTest2 = [ ones( size(pposTest, 1), 1); ...
            zeros( size(pnegTest,1), 1) ];
 
+% clear ppos pneg
+% clear pposTest pnegTest
 
 X2 = mexLasso( p2', D, params );
 X2 = X2';
@@ -165,22 +193,49 @@ X2 = X2';
 XTest2 = mexLasso( pTest2', D, params );
 XTest2 = XTest2';
 
-X2     = reshape( X2, size(X2,1)./numNeighbors, [] );
-XTest2 = reshape( XTest2, size(XTest2,1)./numNeighbors, [] );
+if( isempty(dataLoc))
+    save( sprintf('%s/%s_featsNbr_trn.m', SAVEPATH, SAVEPREFIX ), X2);
+end
+if( isempty(dataTestLoc))
+    save( sprintf('%s/%s_featsNbr_trn.m', SAVEPATH, SAVEPREFIX ), XTest2);
+end
 
-X2 = full(X2);
-XTest2 = full(XTest2);
+return;
+
+X2 = full( X2 );
+XTest2 = full( XTest2 );
+
+%% make predictions on all neighborhood patches
+
+[pred_1c2, prob_1c2 ]        = classifier.predict( X2 );
+[predTest_1c2, probTest_1c2] = classifier.predict( XTest2 );
+
+
+%% reshape and build final feature vector
+
+% X2     = reshape( X2', size(X2,2).*numNeighbors, []  )';
+% XTest2 = reshape( XTest2', size(XTest2,2).*numNeighbors, [] )';
+
+% X2 = [ X2(1:27:end,:), reshape(prob_1c2(:,2)', numNeighbors, [])'];
+% XTest2 = [XTest2(1:27:end,:), reshape(probTest_1c2(:,2)', numNeighbors, [])'];
+
+X2 = reshape(prob_1c2(:,2)', numNeighbors, [])';
+XTest2 = reshape(probTest_1c2(:,2)', numNeighbors, [])';
+
+size( X2 )
+size( XTest2 )
 
 Y2     = Y2(1:numNeighbors:end);
 YTest2 = YTest2(1:numNeighbors:end);
 
-% pool if 
+% pool if requested
 if( ~isempty( poolingType ))
    X2 = poolFeatures( poolingType, X2, numNeighbors );
    XTest2 = poolFeatures( poolingType, XTest2, numNeighbors );
 end
 
-%% classification level 2
+
+% classification level 2
 
 classifier2 = classify( X2, Y2, classopts );
 
