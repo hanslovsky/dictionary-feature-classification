@@ -15,7 +15,7 @@ classdef Tid_from2D < handle
         
         params; % dictionary learning parameters
         bigIters = 1;
-        dictDist = 'euclidean';
+        
         distTol  = 0.1;
 
         alpha;  % The dictionary coefficients
@@ -37,14 +37,16 @@ classdef Tid_from2D < handle
     properties
         X;      % The data
         
-        D;      % The dictionary elements
-        Dxfm;   % The full dictionary
+        D2d;      % The dictionary elements
+        D3d;      % The dictionary elements
+        Dxfm;     % The full dictionary
         
+        dictDist = 'euclidean';
     end
 
     methods
 
-        function this = Tid_from2D( D, patchSize, params, distTol )
+        function this = Tid_from2D( X, patchSize, params, distTol )
             if( ~exist( 'distTol', 'var') || isempty(distTol))
                 this.distTol = 0.1;
             else
@@ -65,7 +67,7 @@ classdef Tid_from2D < handle
 %                 error( 'patch size not compatible with dictionary size');
 %             end
 
-            this.D = D;
+            this.X = X;
 
         end % constructor
         
@@ -98,28 +100,34 @@ classdef Tid_from2D < handle
 %         end
 
         % Very experimental
-        function D = buildDictionary(this)
+        function buildDictionary(this)
             
-            try
-                this.D = mexTrainDL( this.X, this.params );
-%                 this.makeDictRotInv();
-            catch e
-                disp('no mexTrainDL - choosing dictionary by random sampling');
+            this.genVectorTransformations();
+            
+%             try
+%                 this.D2d = mexTrainDL( this.X, this.params );
+% %                 this.makeDictRotInv();
+%             catch e
+%                 disp('no mexTrainDL - choosing dictionary by random sampling');
                 %e % print error 
-                this.D = this.X( :, randperm( this.numSamples, this.params.K));
-                this.makeDictRotInv();
-            end
+                this.D2d = this.X;
+                this.D2d
+                this.makeDictRotInv( 2 );
+                
+                this.dict2dTo3d();
+                this.makeDictRotInv_approx( 3 );
+%             end
 
-            for iter = 1:this.bigIters
-               
-                % initialize with previous dictionary
-                this.params.D = this.D;
+%             for iter = 1:this.bigIters
+%                
+%                 % initialize with previous dictionary
+%                 this.params.D = this.D2d;
+% 
+%                 D = this.D2d;
+% %                 this.makeDictRotInv();
+%             end
 
-                D = this.D;
-%                 this.makeDictRotInv();
-            end
-
-            this.Dxfm = this.xfmDict( );
+            this.Dxfm = this.xfmDict( 3 );
 
         end % the magic
 
@@ -192,16 +200,97 @@ classdef Tid_from2D < handle
             this.alpha = alpha;
         end
 
-        % Make the dictionary rotationally invariant
+        function dict2dTo3d( this, dorep )
+            
+            if( ~exist( 'dorep', 'var') || isempty( dorep ))
+               dorep = 1; 
+            end
+            
+            N = size( this.D2d, 1 );
+            
+            i = reshape( 1:prod(this.patchSize2d), this.patchSize2d );
+            irepz = repmat( i, [ 1 1 this.patchSize3d(3) ]);
+            irot = repmat( permute( i, [ 3 1 2]), [this.patchSize3d(3) 1 1 ]);
+            
+            jrep = irepz(:);
+            jrot = irot(:);
+            
+            if( dorep )
+                [ii,jj] = ndgrid( 1:N, 1:N );
+                ii = ii(:);
+                jj = jj(:);
+            else
+                ii = zeros( N.*(N-1)./2, 1);
+                jj = zeros( N.*(N-1)./2, 1);
+                n = 1;
+                for a = 1:N
+                    for b = a+1:N
+                        ii(n) = a;
+                        jj(n) = b;
+                        n = n + 1;
+                    end
+                end
+            end
+            
+%             this.D3d =  this.D2d(ii,jrep) .*  this.D2d(jj,jrot);
+            this.D3d =  this.D2d(jrep,ii) .*  this.D2d(jrot,jj);
+            
+        end
+        
         function makeDictRotInv( this, dim )
 
-            dxsz  = size( this.D, 2); % size of transformed dictionary
+            if( dim == 2 )
+                rxi = cell2mat(this.rotXfmIdx2d);
+                D = this.D2d;
+            elseif( dim == 3)
+                rxi = cell2mat(this.rotXfmIdx3d);
+                D = this.D3d;
+            end
+            rxi = rxi';
+
+            nD   = size( D, 2 );
+            nRxi = size( rxi, 1 );
+
+            Dbig = zeros( size(D,1), nD.*nRxi);
+
+            k = 1;
+            for i = 1:nD
+                dd = D(:,i);
+                dd = dd(rxi);
+
+                %pd = pdist( dd );
+                %[n,m] = ind2subTri( size(dd,1), find( pd < 0.1 ));
+                
+                [~, ki ] = dissimilarVecs( dd, 0.1 );
+                num2add = length( ki );
+
+                Dbig( :, k:k+num2add-1 ) = dd(ki,:)'; 
+
+                k = k + num2add;
+            end
+
+            Dbig = Dbig( :, 1:(k-1) );
+            Dbig
+            if( dim == 2 )
+                this.D2d = Dbig;
+            elseif( dim == 3)
+                this.D3d = Dbig;
+            end
             
+        end
+
+        % Make the dictionary rotationally invariant
+        function makeDictRotInv_approx( this, dim )
+
             if( dim == 2 )
                 rxi= cell2mat(this.rotXfmIdx2d);
-            elseif( dim == 3)
+                D = this.D2d;
+            elseif( dim == 3 )
                 rxi= cell2mat(this.rotXfmIdx3d);
+                D = this.D3d;
             end
+            
+            dxsz  = size( D, 2 ); % size of transformed dictionary
             
             allIdxs = 1:dxsz;
             invariantIdxs = true(1,dxsz);
@@ -215,18 +304,16 @@ classdef Tid_from2D < handle
                 end
                 
                 j = setdiff( allIdxs, i );
+                Draw = D( :, j );
                 
-                thisXfmDict = this.D( :, i );
+                thisXfmDict = D( :, i );
                 thisXfmDict = thisXfmDict( rxi );
-                Draw = this.D( :, j );
                 
                 pd = pdist2( thisXfmDict', Draw', this.dictDist );
                 size( pd )
                 pd = min( pd, [], 1 );
                 
-                
                 similar = ( pd < this.distTol );
-                
                 fprintf('excluding %d elems at %d\n', nnz(similar), i );
                 
                 % update indices of dict elems that are
@@ -235,7 +322,11 @@ classdef Tid_from2D < handle
                 
             end
 
-            this.D = this.D( :, invariantIdxs );
+            if( dim == 2 )
+                this.D2d = this.D2d( :, invariantIdxs );
+            elseif( dim == 3)
+                this.D3d = this.D3d( :, invariantIdxs );
+            end
             
         end % make dict rot inv
 
@@ -243,18 +334,20 @@ classdef Tid_from2D < handle
             
             if( dim == 2 )
                 rxi= this.rotXfmIdx2d;
+                D = this.D2d;
             elseif( dim == 3)
                 rxi= this.rotXfmIdx3d;
+                D = this.D3d;
             end
             
-            [r,N] = size( this.D );
-            M = length( rxix );
+            [r,N] = size( D );
+            M = length( rxi );
             Dxfm = zeros( r, N*M );
             j = reshape( 1:(N*M), M, [] );
             k =  cell2mat( rxi );
             
             for i = 1:N
-                tmp = this.D(:,i);
+                tmp = D(:,i);
                 Dxfm(:,j(:,i)) = tmp(k);
             end
             
