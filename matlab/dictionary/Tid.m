@@ -269,6 +269,34 @@ classdef Tid < handle
 
         end
         
+        function downsampler = getDownsampler2dx()
+            downsampler = @(X,f)(reshape(mean(reshape( X', f, [] )), size(X')./[f 1]))';
+        end
+        
+        function downsampler = getDownsampler2dy()
+            downsampler = @(X,f)(reshape(mean(reshape( X, f, [] )), size(X)./[f 1]));
+        end
+        
+        function downsampler = getDownsampler2dxy()
+            downsamplerX = @(X,f)(reshape(mean(reshape( X', f, [] )), size(X')./[f 1]))';
+            downsamplerY = @(X,f)(reshape(mean(reshape( X, f, [] )), size(X)./[f 1]));
+            downsampler = @(X,f)(downsamplerX( downsamplerY(X,f) , f));
+        end
+        
+        function summer = sum2dx()
+            summer = @(X,f)(reshape(sum(reshape( X', f, [] )), size(X')./[f 1]))';
+        end
+        
+        function summer = sum2dy()
+            summer = @(X,f)(reshape(sum(reshape( X, f, [] )), size(X)./[f 1]));
+        end
+        
+        function summer = sum2dxy()
+            sumX = Tid.sum2dx();
+            sumY = Tid.sum2dy();
+            summer = @(X,f)(sumX( sumY(X,f) , f));
+        end
+        
         function downsampler = getDownsampler3dz()
             downsampler = @(X,f)(permute(reshape(mean(reshape( permute(x, [3 2 1]), f, [] )), sz([3 2 1])./[f 1 1]), [3 2 1]));
         end
