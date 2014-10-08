@@ -1,9 +1,12 @@
 classdef Dict2dTo3d < handle
-    % Tid - transformationally invariant dictionary
+    % Dict2dTo3d 
+    %
+    % This class contains logic that builds a high-res 3d dictionary from 
+    % 2d patches at a lower resolution.
     %
     % John Bogovic
     % HHMI
-    % August 2014
+    % September 2014
     
     properties ( SetAccess = private )
         
@@ -18,6 +21,21 @@ classdef Dict2dTo3d < handle
         
         summer2Dxy; % downsampling by sum function
         
+        % Constraint matrices
+        constraintMtxX;
+        constraintMtxY;
+        constraintMtxZ;
+        
+        % 
+        p2dFill3d;
+        pairLocRng;
+        dimXyzList;
+        allSims;
+        
+        
+        % optimization options
+        Nbest = 3;
+        
         ndims = 3; 
     end
     
@@ -29,6 +47,11 @@ classdef Dict2dTo3d < handle
         % f   - downsampling factor
         function this = Dict2dTo3d( D2d, sz, f )
             
+            
+%             import net.imglib2.algorithms.opt.astar.AStarMax;
+            import net.imglib2.algorithms.patch.Patch2dFill3d;
+            import java.util.*;
+
             this.D2d     = D2d;
             this.numDict = size( this.D2d, 1 );
            
@@ -48,42 +71,177 @@ classdef Dict2dTo3d < handle
                 this.sz2d = [ sz sz ];
                 this.sz3d = [ sz sz sz ];
             end
+                        
+%             this.sums2d = Dict2dTo3d.allSums( this.D2d, this.sz2d, this.f);
+%             this.summer2Dxy = Tid.sum2dxy();
+
+            half = (this.f - 1)./2;
+            this.pairLocRng = (1+half) : this.f : this.sz3d(1);
             
-            this.sums2d = Dict2dTo3d.allSums( this.D2d, this.sz2d, this.f);
             
-            this.summer2Dxy = Tid.sum2dxy();
+%             this.allSims = this.allSimilarities();
+
+            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+            this.dimXyzList = [ dList(:), xyzList(:) ];
+            
         end
         
         function patch = sample2dTo3d( this )
+            import net.imglib2.algorithms.patch.SubPatch2dLocation;
             
-%             [N,M] = size( this.D2d );
             szSm = this.sz2d ./ this.f;
             
-            % hard-coded '3' corresponds to 3 spatial-dimensions
-            msk = zeros( [ 3 max(szSm) ] );
-            mskN = numel(msk);
-            xyzn = randperm( mskN );
+            % stores the order in which patches are added to particular bins 
+            % (hard-coded '3' corresponds to 3 spatial-dimensions)
+            param = zeros( [ 3 max(szSm) ] ); 
             
+            % stores which observed 2d patch goes into which 3d position / orientation "bin"
             patchIdxs = zeros( [ 3 max(szSm) ] );
             
+            % patch Loc and Idx
+            % [ dim xyz idx ]
+            patchLocIdx = zeros( 3.*max(szSm), 3 );
+            
+            % how many bins are there
+            mskN = numel( param );
+            
+            % randomize the order in which the bins will be filled
+            xyzn = randperm( mskN );
+            
             for ii = 1:mskN
+                fprintf('%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n');
                 
-                [d,n] = ind2sub( size(msk), xyzn(ii));
+                dim = this.dimXyzList(ii,1);
+                xyz = this.dimXyzList(ii,2);
+                dxyzi1 = xyzn(ii);
                 
                 if( ii > 1 )
-                    xsectList = Dict2dTo3d.findIntersections( msk, [d n]);
-                    xsectList
+                    
+%                     xsectList = Dict2dTo3d.findIntersections( param, [dim xyz]);
+%                     xsectList
+
+                    [ xsectCoords, ~ ] = Dict2dTo3d.findIntersectionsList( patchLocIdx, dim,  xyz);
+                    % xsectCoords
+                    
+                    % get the next best candidate for patch 
+                    
+                    
+                    for nn = 1:size( xsectCoords, 1 )
+                        
+                        fixedDim = xsectCoords(nn,1);
+                        fixedXyz = xsectCoords(nn,2);
+                        fixedIdx = xsectCoords(nn,3);
+                        
+                        dxyzi2 = ( this.dimXyzList(:,1) == fixedDim & ...
+                                   this.dimXyzList(:,2) == fixedXyz);
+                                
+%                         dxyzi2 = find( this.dimXyzList(:,1) == fixedDim & ...
+%                                        this.dimXyzList(:,2) == fixedXyz);
+%                         tsim = this.allSims(  fixedIdx, :, dxyzi1, dxyzi2 );
+
+                        % get similarities for all patches and the given orientations
+                        tsim = this.allSims(  fixedIdx, :, dxyzi1, dxyzi2 )
+
+                        [tsimSort, sortIdx ] = sort( tsim );
+                      
+                        for mm = 1:this.Nbest
+                            aa=1;
+                        end
+                        
+                    end
+                    
                 else
-                   patchIdxs(ii) = randi( this.numDict, 1 ); 
+                    rootSpl = SubPatch2dLocation( dim, xyz, 0 );
+                    this.astar.setRoot( rootSpl );
+                    patchIdxs(ii) = randi( this.numDict, 1 ); 
+                    patchLocIdx(ii,:) = [ dim, xyz, patchIdxs(ii) ];
                 end
                 
-                msk( xyzn(ii) ) = ii
-                patchIdxs(ii)
+                param( xyzn(ii) ) = ii;
+                patchLocIdx(ii,:) = [ dim, xyz, randi( this.numDict, 1 ) ];
                 
-                pause;
             end
             
             patch = [];
+        end
+        
+        function [patchParams,iteration] = testOutThings( this )
+            
+            import net.imglib2.algorithms.patch.*;
+            
+            
+            N = size( this.dimXyzList, 1 )
+            
+            % randomize the order in which the patch bins will be filled
+            xyzn = randperm( N );
+            
+            done = false;
+            iteration = 1;
+            while( ~done )
+%                 iteration 
+                if( iteration == 1 )
+                   
+                    ii = xyzn( 1 );
+                    dim = this.dimXyzList( ii, 1 );
+                    xyz = this.dimXyzList( ii, 2 );
+                    
+                    % dxyzi1 = xyzn(ii);
+                    
+                    initialPatchIdx = randi( this.numDict );
+                    rootSpl = SubPatch2dLocation( dim, xyz, initialPatchIdx, 0 );
+                    this.p2dFill3d = Patch2dFill3d( rootSpl );
+                    
+                else
+                    
+                    nextNode = this.p2dFill3d.next();
+                    depth = nextNode.getDepth();
+                    if( depth == N )
+                        
+                        % the next node is best and describes the 
+                        % parameters for the locally optimal patch
+                        patchParams = nextNode;
+                        
+                        break;
+                    end
+                    
+                    ii = xyzn( depth + 1);
+                    
+                    dim = this.dimXyzList( ii, 1 );
+                    xyz = this.dimXyzList( ii, 2 );
+                    
+                    % % for debug purposes
+                    % nextPatchIdx = randi( this.numDict, 1, this.Nbest );
+
+                    [ xsectParentList ] = intersectingParents( nextNode );
+                    costs = this.patchCosts( ii, xsectParentList );
+
+                    candList = java.util.ArrayList( this.Nbest );
+                    [ sortedCosts, sortedCostIdxs ] = sort( costs );
+                    for nn = 1:this.Nbest
+                       
+                       val = sortedCosts(nn);
+                       spl = SubPatch2dLocation( dim, xyz, sortedCostIdxs(nn), val );
+                       candList.add( spl );
+                    end
+                    
+                    % % for debug purposes
+%                     candList = java.util.ArrayList();
+%                     for nn = 1:this.Nbest
+%                        % pick random value for now
+%                        val = rand;
+%                        spl = SubPatch2dLocation( dim, xyz, nextPatchIdx(nn), val );
+%                        candList.add( spl );
+%                     end
+                    
+                    this.p2dFill3d.addFromNode( nextNode, candList );
+                    % this.p2dFill3d
+                    
+%                     if( depth == N - 1 )
+%                         done = true;
+%                     end
+                end
+                iteration = iteration + 1;
+            end
         end
         
         function constraints = getSumConstraints( this, patchIdxs )
@@ -95,8 +253,6 @@ classdef Dict2dTo3d < handle
             for i = 1:length(xyz)
                 patch = reshape( this.D2d( patchIdxs(d(i),xyz(i)), : ), this.sz2d );
                 constraints( Dict2dTo3d.planeMask( szdown, xyz(i), d(i) )) = this.summer2Dxy( patch, this.f );
-%                 constraints
-%                 fprintf('\n\n');
             end
         end
         
@@ -104,8 +260,125 @@ classdef Dict2dTo3d < handle
             szSm3 = this.sz3d ./ this.f;
             szSm2 = this.sz2d ./ this.f;
             planeMask = Dict2dTo3d.planeMask( szSm3, xyz, d );
-%             planeMask
             c = reshape( constraints( planeMask ), szSm2 );
+        end
+        
+        function buildConstraintMatrix( this )
+           
+            [x,y,z] = ndgrid( 1:this.f, 1:this.f, 1:this.f );
+            N = numel(x);
+            
+            this.constraintMtxX = zeros( this.f, N );
+            this.constraintMtxY = zeros( this.f, N );
+            this.constraintMtxZ = zeros( this.f, N );
+            
+            for i = 1:this.f
+                % rows
+                this.constraintMtxX(i,:) = reshape((x==i),1,[]);
+                
+                % colums
+                this.constraintMtxY(i,:) = reshape((y==i),1,[]);
+                
+                % slices
+                this.constraintMtxZ(i,:) = reshape((z==i),1,[]);
+                
+            end
+        end
+
+        function [ costs ] = patchCosts( this, dxyzi1, intersectionList )
+            
+            N = size(intersectionList,1);
+            constraintCosts = zeros( N, this.numDict );
+            
+            for nn = 1:N
+                
+                fixedDim = intersectionList(nn,1);
+                fixedXyz = intersectionList(nn,2);
+                fixedIdx = intersectionList(nn,3);
+                
+                dxyzi2 = ( this.dimXyzList(:,1) == fixedDim & ...
+                           this.dimXyzList(:,2) == fixedXyz);
+                               
+                constraintCosts( nn,:) = this.allSims(  fixedIdx, :, dxyzi1, dxyzi2 );
+            end
+            
+            % take max over constraint costs for final cost
+            costs = max(constraintCosts);
+        end
+        
+        function [ cost ] = patchCostSlow( this, p1, xyz1, n1, intersectionList )
+            N = size(intersectionList,1);
+            similarityList = zeros( N, 1);
+            for i = 1:N
+                p2 = reshape( this.X( intersectionList(i,3), :), this.sz2d );    
+                similarityList(i) = this.patchSimilarity( p1, xyz1, n1, ...
+                                        p2, intersectionList(i,1), intersectionList(i,2));
+                                    
+            end
+            cost = max( similarityList );
+        end
+        
+        % make this methods abstract when more possibilities are available
+        % this version will use unconstrained linear least squares 
+        function [ sim, x, cmtx, b, pm1, pm2, overlap ] = patchSimilarity( this, p1, xyz1, n1, p2, xyz2, n2 )
+            
+            % get the value of the sum-contraint each patch describes over
+            % the overlapping area
+            sz3 = this.sz3d;
+
+            pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
+            pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+            overlap = (pm1 > 0) & (pm2 > 0);
+           
+            [cmtx1, b1] = Dict2dTo3d.contraintsFromMask( p1, overlap, pm1 );
+            [cmtx2, b2] = Dict2dTo3d.contraintsFromMask( p2, overlap, pm2 );
+
+            cmtx = [ cmtx1; cmtx2 ] ;
+            b    = [ b1; b2 ];
+            x = pinv(cmtx) * b;
+            
+            sim = sum((cmtx*x - b).^2);
+        end
+        
+        % returns a 4d array describing the similarities between all pairs
+        % of patches in all positions / orientations
+        % 
+        % dimensions are : ( patch1Index patch2Index patch1XyzDim patch2XyzDim )
+        % the this.dimXyzList property stores the patch orientations.
+        %
+        % As an example:
+        % allSims( i, j, k, l ) stores the similarities for patches i and j
+        %   for orientations 
+        %   this.dimXyzList( k ) and
+        %   this.dimXyzList( l ) 
+        %
+        function allSims = allSimilarities( this )
+
+            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+            N = numel(dList);
+            
+            this.dimXyzList = [ dList(:), xyzList(:) ];
+            
+            allSims = zeros( this.numDict, this.numDict, N, N );
+            for i = 1:this.numDict
+                p1 = reshape( this.D2d(i,:), this.sz2d );
+                for j = (i+1):this.numDict
+                    p2 = reshape( this.D2d(j,:), this.sz2d );
+                    for k = 1:N
+                        xyz1 = xyzList(k);
+                        n1   = dList(k);
+                        for l = 1:N
+                            xyz2 = xyzList(l);
+                            n2   = dList(l);
+                            sim = this.patchSimilarity( p1, xyz1, n1, p2, xyz2, n2 );
+                            
+                            allSims( i, j, k, l ) = sim;
+                            allSims( j, i, k, l ) = sim;
+                        end
+                    end
+                end
+            end
+            
         end
         
     end
@@ -215,10 +488,16 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        % 
         function intersection = findIntersections( msk, v )
             j = setdiff( 1:3, v(1));
             m = msk( j, : );
             intersection = m( m > 0 );
+        end
+        
+        function [coords, logicalIdx] = findIntersectionsList( xyzDimList, dim, xyz )
+            logicalIdx = (xyzDimList(:,2) > 0 ) & (xyzDimList(:,1) ~= dim);
+            coords = xyzDimList( logicalIdx, : );
         end
                 
         % xyz{1,2} are 3-vectors giving a point planes 1 and 2
@@ -230,6 +509,10 @@ classdef Dict2dTo3d < handle
             msk2 = Dict2dTo3d.planeMask( sz, xyz2, n2);
             msk = msk1 & msk2;
 
+            if( nargout == 1)
+                return;
+            end
+            
             if( n1 == n2 )
                 d = 0;
             else
@@ -282,6 +565,43 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        % n is {1,2,3}
+        function msk = planeMaskF( sz, xyz, n, f )
+            msk = zeros( sz );
+            half = (f-1)./2;
+            
+            if( isscalar(xyz) )
+                val = xyz;
+            else
+                switch n
+                    case 1
+                        val = xyz(1);
+                    case 2
+                        val = xyz(2);
+                    case 3
+                        val = xyz(3);
+                    otherwise
+                        error('invalid normal direction');
+                end
+            end
+            
+            rng = val-half : val+half;
+            N = prod(sz(1:2));
+            
+            v = repmat( reshape(1:N, sz(1:2)), [1 1 f]);
+            
+            switch n
+                case 1
+                    msk( rng, :, : ) = permute(v, [3 1 2]);
+                case 2
+                    msk( :, rng, : ) = permute(v, [1 3 2]);
+                case 3
+                    msk( :, :, rng ) = v;
+                otherwise
+                    error('invalid normal direction');
+            end
+        end
+        
         % Deprecated
         function intersection = findIntersectionsBig( msk, v )
            n = v(4);
@@ -302,7 +622,7 @@ classdef Dict2dTo3d < handle
         % where N is the number of patches and
         % M is prod( sz )
         % and sz is a vector describing the patch size
-        function simMtx = allSimilarities( X, sz ) 
+        function simMtx = allSimilaritiesSums( X, sz ) 
             [N,M] = size( X );
             if( prod(sz) ~= M )
                 error('size inconsistent with patch matrix X')
@@ -314,6 +634,47 @@ classdef Dict2dTo3d < handle
             simMtx = zeros( N , L );
         end
         
-    end
+        function [cmtx, b] = contraintsFromMask( patch, constraintPtMask, pm )
+            
+            pm = pm( constraintPtMask );
+             
+            % remove zero 
+            % since it indicates points not in the patch
+            patchIdxsInMask = setdiff( unique( pm ), 0 );
+            
+            N = length( patchIdxsInMask );  % the number of constraints
+            M = nnz( constraintPtMask ); % the number of elements in the HR patch
+            cmtx = zeros( N , M );
+            
+            for i = 1:N
+                cmtx( i,  (pm == patchIdxsInMask(i)) ) = 1;
+            end
+            
+            b = patch(  pm( patchIdxsInMask ));
+        end
+        
+        function [ xsectParentList ] = intersectingParents( dimXyzNode )
+            
+            depth = dimXyzNode.getDepth();
+            xsectParentList = zeros( depth, 3 );
+            parent = dimXyzNode.getParent();
+            n = 0;
+            for i = 1:depth
+                
+                if( dimXyzNode.getData().dim ~= parent.getData().dim )
+                    n = n + 1;
+                    xsectParentList( n, : ) = [ parent.getData().dim, ...
+                                                parent.getData().xyz,...
+                                                parent.getData().idx ];
+                end
+                
+                parent = parent.getParent();
+            end
+            
+            xsectParentList = xsectParentList(1:n,:);
+            
+        end
+        
+    end % static methods
     
-end
+end % class
