@@ -35,6 +35,7 @@ classdef Dict2dTo3d < handle
         
         % optimization options
         Nbest = 3;
+        maxItersPerPatch = 5000;
         
         ndims = 3; 
     end
@@ -78,12 +79,21 @@ classdef Dict2dTo3d < handle
             half = (this.f - 1)./2;
             this.pairLocRng = (1+half) : this.f : this.sz3d(1);
             
-            
             this.allSims = this.allSimilarities();
 
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
             
+        end
+        
+        function idx = locXyzDim2Idx( this, dim, xyz )
+            idx = ( this.dimXyzList(:,1) == dim & ...
+                    this.dimXyzList(:,2) == xyz );
+        end
+        
+        function [dim,xyz] = locIdx2XyzDim( this, idx )
+            dim = this.dimXyzList( idx, 1 );
+            xyz = this.dimXyzList( idx, 2 );
         end
         
         function patch = sample2dTo3d( this )
@@ -170,7 +180,7 @@ classdef Dict2dTo3d < handle
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
             
-            N = size( this.dimXyzList, 1 )
+            N = size( this.dimXyzList, 1 );
             
             % randomize the order in which the patch bins will be filled
             xyzn = randperm( N );
@@ -179,7 +189,13 @@ classdef Dict2dTo3d < handle
             iteration = 1;
             while( ~done )
 %                 iteration 
-                if( iteration == 1 )
+
+                if ( iteration > this.maxItersPerPatch )
+                    
+                    patchParams = this.currentBestPatchParams();
+                    return;
+                    
+                elseif( iteration == 1 )
                    
                     ii = xyzn( 1 );
                     dimIni = this.dimXyzList( ii, 1 );
@@ -217,7 +233,7 @@ classdef Dict2dTo3d < handle
                                 SubPatch2dLocation( dimThis, xyzThis, -1, -1 ), ...
                                 prevNode );
                     [ xsectList ] = Dict2dTo3d.intersectingParents( tmpNode );
-                    size( xsectList )
+%                     size( xsectList )
                             
                     % TODO - CHECK IF PARENT LIST IS EMPTY - done!
                     %        INCLUDE CONSTRAINTS OF nextNode in list - done
@@ -231,14 +247,14 @@ classdef Dict2dTo3d < handle
                               
 
                     if( isempty( xsectList ))
-                        fprintf('no intersections...picking randomly\n');
+%                         fprintf('no intersections...picking randomly\n');
                         % pick 'Nbest' patches randomly and give them equal cost 
                         randomPatchIndexes = randi( this.numDict, 1, this.Nbest);
                         costs = ones( this.numDict, 1 );
                         % TODO - what cost should be given?
                         costs( randomPatchIndexes ) = 0;
                     else
-                        fprintf('computing costs\n');
+%                         fprintf('computing costs\n');
                         costs = this.patchCosts( iiThis, xsectList );
                     end
 
@@ -273,6 +289,19 @@ classdef Dict2dTo3d < handle
                 iteration = iteration + 1;
                 %pause;
             end
+        end
+        
+        function currentBest = currentBestPatchParams( this )
+            N = size( this.dimXyzList, 1 );
+            it = this.p2dFill3d.getSet().iterator();
+            while( it.hasNext())
+               thisone = it.next(); 
+               if( thisone.getDepth() == (N-1))
+                  currentBest = thisout;
+                  return;
+               end
+            end
+            currentBest = [];
         end
         
         function constraints = getSumConstraints( this, patchIdxs )
@@ -400,7 +429,7 @@ classdef Dict2dTo3d < handle
             allSims = zeros( this.numDict, this.numDict, N, N );
             for i = 1:this.numDict
                 p1 = reshape( this.D2d(i,:), this.sz2d );
-                for j = (i+1):this.numDict
+                for j = i:this.numDict
                     p2 = reshape( this.D2d(j,:), this.sz2d );
                     for k = 1:N
                         xyz1 = xyzList(k);
@@ -570,6 +599,12 @@ classdef Dict2dTo3d < handle
             sz = size( msk );
             pmsk = Dict2dTo3d.planeMask( sz, xyz, n );
             line = patch( msk( pmsk )); 
+        end
+        
+        function I = fill3dWith2d( sz3d, dim, xyz, f, patch)
+            I = zeros( sz3d );
+            msk = Dict2dTo3d.planeMaskF( sz3d, xyz, dim, f);
+            I( msk > 0 ) = patch( msk(msk>0) );
         end
         
         % n is {1,2,3}

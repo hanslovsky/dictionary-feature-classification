@@ -2,6 +2,7 @@
 
 import net.imglib2.algorithms.patch.SubPatch2dLocation;
 import net.imglib2.algorithms.opt.astar.AStarMax;
+import net.imglib2.algorithms.opt.astar.SortedTreeNode;
 import java.util.*;
 
 %%  helper functions
@@ -29,10 +30,32 @@ patch3(:,5) = 1;
 patch4 = zeros( 9, 9 );
 patch4(:,5) = repmat([0.5 2 0.5]', 3, 1);
 
-patch5 = (1./3).*ones( 9, 9 );
+% patch5 = (1./3).*ones( 9, 9 );
 
-X = [patch1(:), patch2(:), patch3(:), patch4(:), patch5(:)]';
+patch6 = zeros( 9, 9 );
+patch6(1,:) = 1;
 
+patch7 = zeros( 9, 9 );
+patch7(:,1) = 1;
+
+patch8 = zeros( 9, 9 );
+patch8(end,:) = 1;
+
+patch9 = zeros( 9, 9 );
+patch9(:,end) = 1;
+
+patch10 = zeros( 9, 9 );
+patch10(1:3,1) = 1;
+
+patch11 = zeros( 9, 9 );
+patch11(1:3,end) = 1;
+
+% X = [   patch1(:), patch2(:), patch3(:), patch4(:), patch5(:), patch6(:), patch7(:), ...
+%        patch8(:), patch9(:), patch10(:), patch11(:)]';
+
+X = [   patch1(:), patch2(:), patch3(:), patch4(:), patch6(:), patch7(:), ...
+        patch8(:), patch9(:), patch10(:), patch11(:)]';
+    
 %%
 
 % % peasy = ones( 9, 9 );
@@ -69,13 +92,102 @@ X = [patch1(:), patch2(:), patch3(:), patch4(:), patch5(:)]';
 % 
 % d23.sample2dTo3d()
 
+%% test patch similarity / cost
+
+% clear d23;
+% sz = 9;
+% f  = 3;
+% d23 = Dict2dTo3d( X, sz, f );
+
+% %%
+% 
+% dim1 = 3;
+% xyz1 = 2;
+% 
+% dim2 = 1;
+% xyz2 = 5;
+% 
+% p1 = patch1;
+% p2 = patch10;
+% 
+% I1 = Dict2dTo3d.fill3dWith2d( [9 9 9], dim1, xyz1, f, p1 );
+% I2 = Dict2dTo3d.fill3dWith2d( [9 9 9], dim2, xyz2, f, p2 );
+% 
+% [ sim1, x, cmtx, b, pm1, pm2, overlap ] = d23.patchSimilarity( p1, xyz1, dim1, p2, xyz2, dim2 );
+% sim1
+% 
+% %% compare the above to the computation with allSims
+% 
+% allSims = d23.allSims;
+% 
+% idx1 = d23.locXyzDim2Idx( dim1, xyz1 )
+% idx2 = d23.locXyzDim2Idx( dim2, xyz2 )
+% 
+% allCosts = allSims( 1, :, idx1, idx2 );
+% allCosts
+% 
 %%
+% numDifferent = 0;
+% 
+% for i = 1:size(X,1)
+% %     p1 = reshape( X(i,:), [9 9]);
+% %     for j = 1:size(X,2)
+% %         p2 = reshape( X(j,:), [9 9 ]);
+% %         
+% %         for n = 1:size(d23.dimXyzList,1)
+% %             dim1 = d23.dimXyzList(n,1);
+% %             xyz1 = d23.dimXyzList(n,2);
+% %             for m = 1:size(d23.dimXyzList,1)
+% %                 dim2 = d23.dimXyzList(m,1);
+% %                 xyz2 = d23.dimXyzList(m,2);
+% %                 
+% %                 [ sim1, x, cmtx, b, pm1, pm2, overlap ] = d23.patchSimilarity( p1, xyz1, dim1, p2, xyz2, dim2 );
+% %                 [ sim2, x, cmtx, b, pm1, pm2, overlap ] = d23.patchSimilarity( p1, xyz2, dim2, p2, xyz1, dim1 );
+% %                 
+% %                 if ( sim1 ~= sim2 )
+% %                     fprintf('different\n');
+% %                     numDifferent = numDifferent + 1;
+% %                 end
+% %                 
+% %             end
+% %         end
+% %     end
+% end
+
+%% test filling of 3d patches with 2d patches
+
+% I1 = Dict2dTo3d.fill3dWith2d( [9 9 9], 1, 5, f, patch1 );
+% I2 = Dict2dTo3d.fill3dWith2d( [9 9 9], 2, 5, f, patch1 );
+
+%% test consistency of patches given constraints from other patches
+
+
+% sz = 9;
+% f  = 3;
+% d23 = Dict2dTo3d( X, sz, f );
+% 
+% rootNode = SortedTreeNode(  ...
+%     SubPatch2dLocation( 1, 5, 1, 0 ));
+% 
+% tmpNode = SortedTreeNode(  ...
+%     SubPatch2dLocation( 2, 5, 6, -1 ), ...
+%     rootNode );
+% 
+% [ xsectList ] = Dict2dTo3d.intersectingParents( tmpNode );
+% size( xsectList )
+% 
+% iiThis = 5
+% costs = d23.patchCosts( iiThis, xsectList );
+
+%% build the 3d patch from 2d patches!!
 
 clear d23;
 
 sz = 9;
 f  = 3;
 d23 = Dict2dTo3d( X, sz, f );
+
+%%
 
 best = d23.build3dPatch();
 
@@ -97,6 +209,7 @@ while( ~printme.isRoot())
                 printme.getData().idx ];
                 
 end
+params
 
 %% test data for constraints 
 % sz = [ 9 9 9 ];
