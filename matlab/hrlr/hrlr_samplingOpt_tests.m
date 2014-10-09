@@ -77,9 +77,26 @@ sz = 9;
 f  = 3;
 d23 = Dict2dTo3d( X, sz, f );
 
-best = d23.testOutThings();
+best = d23.build3dPatch();
 
 root = d23.p2dFill3d.getRoot();
+
+%% print out full parameters
+
+printme = best
+params = [  best.getData().dim, ...
+            best.getData().xyz, ...
+            best.getData().idx ];
+
+i = 1;
+while( ~printme.isRoot())
+    printme = printme.getParent()
+    params = [ params; ...
+                printme.getData().dim, ...
+                printme.getData().xyz, ...
+                printme.getData().idx ];
+                
+end
 
 %% test data for constraints 
 % sz = [ 9 9 9 ];

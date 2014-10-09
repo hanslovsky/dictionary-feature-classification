@@ -79,7 +79,7 @@ classdef Dict2dTo3d < handle
             this.pairLocRng = (1+half) : this.f : this.sz3d(1);
             
             
-%             this.allSims = this.allSimilarities();
+            this.allSims = this.allSimilarities();
 
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
@@ -165,10 +165,10 @@ classdef Dict2dTo3d < handle
             patch = [];
         end
         
-        function [patchParams,iteration] = testOutThings( this )
+        function [patchParams,iteration] = build3dPatch( this )
             
             import net.imglib2.algorithms.patch.*;
-            
+            import net.imglib2.algorithms.opt.astar.*;
             
             N = size( this.dimXyzList, 1 )
             
@@ -182,45 +182,72 @@ classdef Dict2dTo3d < handle
                 if( iteration == 1 )
                    
                     ii = xyzn( 1 );
-                    dim = this.dimXyzList( ii, 1 );
-                    xyz = this.dimXyzList( ii, 2 );
+                    dimIni = this.dimXyzList( ii, 1 );
+                    xyzIni = this.dimXyzList( ii, 2 );
                     
                     % dxyzi1 = xyzn(ii);
                     
                     initialPatchIdx = randi( this.numDict );
-                    rootSpl = SubPatch2dLocation( dim, xyz, initialPatchIdx, 0 );
+                    rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
                     this.p2dFill3d = Patch2dFill3d( rootSpl );
                     
                 else
                     
-                    nextNode = this.p2dFill3d.next();
-                    depth = nextNode.getDepth();
-                    if( depth == N )
+                    prevNode = this.p2dFill3d.next();
+                    depth = prevNode.getDepth();
+                    if( depth == N-1 )
                         
                         % the next node is best and describes the 
                         % parameters for the locally optimal patch
-                        patchParams = nextNode;
+                        patchParams = prevNode;
                         
                         break;
                     end
                     
-                    ii = xyzn( depth + 1);
+                    iiPrev = xyzn( depth + 1 );
+                    iiThis = xyzn( depth + 2 );
                     
-                    dim = this.dimXyzList( ii, 1 );
-                    xyz = this.dimXyzList( ii, 2 );
+                    % dimPrev = this.dimXyzList( iiPrev, 1 );
+                    % xyzPrev = this.dimXyzList( iiPrev, 2 );
                     
-                    % % for debug purposes
-                    % nextPatchIdx = randi( this.numDict, 1, this.Nbest );
+                    dimThis = this.dimXyzList( iiThis, 1 );
+                    xyzThis = this.dimXyzList( iiThis, 2 );
+                    
+                    tmpNode = SortedTreeNode(  ...
+                                SubPatch2dLocation( dimThis, xyzThis, -1, -1 ), ...
+                                prevNode );
+                    [ xsectList ] = Dict2dTo3d.intersectingParents( tmpNode );
+                    size( xsectList )
+                            
+                    % TODO - CHECK IF PARENT LIST IS EMPTY - done!
+                    %        INCLUDE CONSTRAINTS OF nextNode in list - done
+                    % % This is old and may not be correct
+%                     [ xsectParentList ] = Dict2dTo3d.intersectingParents( prevNode );
+%                     size( xsectParentList )
+%                     
+%                     xsectList = [ prevNode.getData().dim prevNode.getData().xyz prevNode.getData().idx; ...
+%                                   xsectParentList ];
+%                     size( xsectList )
+                              
 
-                    [ xsectParentList ] = intersectingParents( nextNode );
-                    costs = this.patchCosts( ii, xsectParentList );
+                    if( isempty( xsectList ))
+                        fprintf('no intersections...picking randomly\n');
+                        % pick 'Nbest' patches randomly and give them equal cost 
+                        randomPatchIndexes = randi( this.numDict, 1, this.Nbest);
+                        costs = ones( this.numDict, 1 );
+                        % TODO - what cost should be given?
+                        costs( randomPatchIndexes ) = 0;
+                    else
+                        fprintf('computing costs\n');
+                        costs = this.patchCosts( iiThis, xsectList );
+                    end
 
                     candList = java.util.ArrayList( this.Nbest );
                     [ sortedCosts, sortedCostIdxs ] = sort( costs );
-                    for nn = 1:this.Nbest
+                    for nn = 1:length( sortedCosts )
                        
                        val = sortedCosts(nn);
-                       spl = SubPatch2dLocation( dim, xyz, sortedCostIdxs(nn), val );
+                       spl = SubPatch2dLocation( dimThis, xyzThis, sortedCostIdxs(nn), val );
                        candList.add( spl );
                     end
                     
@@ -233,7 +260,10 @@ classdef Dict2dTo3d < handle
 %                        candList.add( spl );
 %                     end
                     
-                    this.p2dFill3d.addFromNode( nextNode, candList );
+                    this.p2dFill3d.addFromNode( prevNode, candList );
+                    
+                    fprintf('iteration %d\n', iteration);
+                    fprintf('set has %d elements\n',this.p2dFill3d.getSet().size());
                     % this.p2dFill3d
                     
 %                     if( depth == N - 1 )
@@ -241,6 +271,7 @@ classdef Dict2dTo3d < handle
 %                     end
                 end
                 iteration = iteration + 1;
+                %pause;
             end
         end
         
@@ -285,6 +316,7 @@ classdef Dict2dTo3d < handle
             end
         end
 
+        % returns 
         function [ costs ] = patchCosts( this, dxyzi1, intersectionList )
             
             N = size(intersectionList,1);
@@ -302,8 +334,14 @@ classdef Dict2dTo3d < handle
                 constraintCosts( nn,:) = this.allSims(  fixedIdx, :, dxyzi1, dxyzi2 );
             end
             
+%             fprintf('constraint costs\n');
+%             size( constraintCosts )
+            
             % take max over constraint costs for final cost
-            costs = max(constraintCosts);
+            costs = max( constraintCosts, [], 1 );
+            
+%             fprintf('new patch costs\n');
+%             size(costs)
         end
         
         function [ cost ] = patchCostSlow( this, p1, xyz1, n1, intersectionList )
