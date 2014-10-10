@@ -639,9 +639,13 @@ classdef Dict2dTo3d < handle
         end
         
         % n is {1,2,3}
-        function msk = planeMaskF( sz, xyz, n, f )
+        function msk = planeMaskF( sz, xyz, n, f, centered )
+            
             msk = zeros( sz );
-            half = (f-1)./2;
+            
+            if( ~exist('centered','var') || isempty( centered ))
+               centered = false; 
+            end
             
             if( isscalar(xyz) )
                 val = xyz;
@@ -658,7 +662,12 @@ classdef Dict2dTo3d < handle
                 end
             end
             
-            rng = val-half : val+half;
+            if( centered )
+                half = (f-1)./2;
+                rng = val-half : val+half;
+            else
+                rng = val : val + f - 1;
+            end
             N = prod(sz(1:2));
             
             v = repmat( reshape(1:N, sz(1:2)), [1 1 f]);
