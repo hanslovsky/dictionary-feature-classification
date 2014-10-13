@@ -34,7 +34,7 @@ classdef Dict2dTo3d < handle
         
         
         % optimization options
-        Nbest = 3;
+        Nbest = 5;
         maxItersPerPatch = 5000;
         
         ndims = 3; 
@@ -206,7 +206,7 @@ classdef Dict2dTo3d < handle
                     % dxyzi1 = xyzn(ii);
                     
                     initialPatchIdx = randi( this.numDict );
-                    rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
+                    rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 )
                     this.p2dFill3d = Patch2dFill3d( rootSpl );
                     
                 else
@@ -257,13 +257,23 @@ classdef Dict2dTo3d < handle
                         costs( randomPatchIndexes ) = 0;
                     else
 %                         fprintf('computing costs\n');
-                        costs = this.patchCosts( iiThis, xsectList );
+                        if( isempty( this.allSims ))
+                            costs = this.patchCostsAllSlow( xyzThis, dimThis, xsectList );
+                        else
+                            costs = this.patchCosts( iiThis, xsectList );
+                        end
+                        
                     end
 
                     candList = java.util.ArrayList( this.Nbest );
                     [ sortedCosts, sortedCostIdxs ] = sort( costs );
-                    for nn = 1:length( sortedCosts )
-                       
+%                     costs
+%                     sortedCosts
+%                     sortedCostIdxs
+%                     pause;
+%                     for nn = 1:length( sortedCosts )
+                    for nn = 1:this.Nbest
+%                        sortedCostIdxs(nn)
                        val = sortedCosts(nn);
                        spl = SubPatch2dLocation( dimThis, xyzThis, sortedCostIdxs(nn), val );
                        candList.add( spl );
@@ -375,14 +385,32 @@ classdef Dict2dTo3d < handle
 %             size(costs)
         end
         
-        function [ cost ] = patchCostSlow( this, p1, xyz1, n1, intersectionList )
+        function [ cost ] = patchCostsAllSlow( this, xyz1, n1, intersectionList )
             N = size(intersectionList,1);
-            similarityList = zeros( N, 1);
+            similarityList = zeros( this.numDict, N);
+            for j = 1:this.numDict
+                p1 = reshape( this.D2d( j, :), this.sz2d );
+                for i = 1:N
+                    p2 = reshape( this.D2d( intersectionList(i,3), :), this.sz2d );
+                    similarityList(j,i) = this.patchSimilarity( ...
+                        p1, xyz1, n1, ...
+                        p2, intersectionList(i,2), intersectionList(i,1));
+                    
+                end
+            end
+            cost = max( similarityList, [], 2 );
+            
+        end
+        
+        function [ cost ] = patchCostsSlow( this, p1, xyz1, n1, intersectionList )
+            N = size(intersectionList,1);
+            cost = zeros( N, 1);
             for i = 1:N
-                p2 = reshape( this.X( intersectionList(i,3), :), this.sz2d );    
-                similarityList(i) = this.patchSimilarity( p1, xyz1, n1, ...
-                                        p2, intersectionList(i,1), intersectionList(i,2));
-                                    
+                p2 = reshape( this.D2d( intersectionList(i,3), :), this.sz2d );
+                cost(i) = this.patchSimilarity( ...
+                            p1, xyz1, n1, ...
+                            p2, intersectionList(i,2), intersectionList(i,1));
+                
             end
             cost = max( similarityList );
         end

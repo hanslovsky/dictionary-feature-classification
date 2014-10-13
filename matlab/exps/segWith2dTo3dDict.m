@@ -103,4 +103,25 @@ tst_acc
 
 %% try building a 3d dictionary from the 2d one
 
+clear d23; 
 d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+
+[patchParams,iteration] = d23.build3dPatch();
+
+%%
+
+printme = patchParams
+params = [  patchParams.getData().dim, ...
+            patchParams.getData().xyz, ...
+            patchParams.getData().idx ];
+        
+i = 1;
+while( ~printme.isRoot())
+    printme = printme.getParent();
+    params = [ params; ...
+                printme.getData().dim, ...
+                printme.getData().xyz, ...
+                printme.getData().idx ];
+                
+end
+params
