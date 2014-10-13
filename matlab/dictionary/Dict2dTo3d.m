@@ -77,13 +77,15 @@ classdef Dict2dTo3d < handle
 %             this.summer2Dxy = Tid.sum2dxy();
 
             half = (this.f - 1)./2;
-            this.pairLocRng = (1+half) : this.f : this.sz3d(1);
+%             this.pairLocRng = (1+half) : this.f : this.sz3d(1);
+            this.pairLocRng = (1) : this.f : this.sz3d(1);
             
-            this.allSims = this.allSimilarities();
-
+            
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
             
+%             this.allSims = this.allSimilarities();
+
         end
         
         function idx = locXyzDim2Idx( this, dim, xyz )
@@ -424,7 +426,7 @@ classdef Dict2dTo3d < handle
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             N = numel(dList);
             
-            this.dimXyzList = [ dList(:), xyzList(:) ];
+%             this.dimXyzList = [ dList(:), xyzList(:) ];
             
             allSims = zeros( this.numDict, this.numDict, N, N );
             for i = 1:this.numDict

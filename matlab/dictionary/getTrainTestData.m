@@ -1,8 +1,9 @@
-function feats = getTrainTestData( datimfn, labimfn, mskimfn, N, D, patchSize, param )
+function [feats, patches, xyz ] = getTrainTestData( datimfn, labimfn, mskimfn, N, D, patchSize, param, dsFactorZ )
 % Usage:
-%   data_set = getTrainTestData( datim, labim, N, param )
+%  [feats, patches, xyz ] = getTrainTestData( datimfn, labimfn, mskimfn, N, D, patchSize, param, dsFactorZ )
 %
-% N = vector containing number of training examples per class
+% N - vector containing number of training examples per class
+% D - the dictionary
 
 %%
 
@@ -11,6 +12,17 @@ function feats = getTrainTestData( datimfn, labimfn, mskimfn, N, D, patchSize, p
 % mskimfn = ds.mask_fn{1};
 
 %%
+isD = 0;
+if( exist( 'D', 'var' ) && ~isempty(D))
+    isD = 1;
+end
+
+doDownsample = 0;
+if( exist( 'dsFactorZ', 'var' ) && ~isempty(dsFactorZ))
+	doDownsample = 1;
+    downsampler = Tid.getDownsampler3dzRs();
+end
+
 fprintf('loading images...\n');
 datim = read_image_stack( datimfn );
 
@@ -60,7 +72,16 @@ if(~exist('numClasses','var'))
     numClasses = 1;
     labelList = 1;
 end
-feats = cell( numClasses, 1);
+
+if( isD )
+    feats = cell( numClasses, 1);
+else
+    feats = [];
+end
+
+patches = cell( numClasses, 1);
+
+xyz = cell( numClasses, 3 );
 
 for c = 1:numClasses
     
@@ -82,11 +103,21 @@ for c = 1:numClasses
     end
     
     [x,y,z] = ind2sub( size(datim), inds);
-%     size(x)
-%     pause;
+    xyz(c, 1:3) = { x, y, z };
+
     fprintf('  grabbing patches\n');
-    patches = grabPatchesSimple( double(datim), patchSize, [], {x,y,z} );
+    [ patchesThis ] = grabPatchesSimple( double(datim), patchSize, [], {x,y,z}, mskim );
+    
+    if( doDownsample )
+        patchesThis = (downsampler( patchesThis', patchSize, dsFactorZ ))';
+    end
+    
+    patches{c}  = patchesThis;
+    
     fprintf('  encoding\n');
-    feats{c} = encoding(  patches', D, 'st', 0, param );
+    if( isD )
+        feats{c} = encoding(  patches{c}', D, 'sc', [], param );
+    end
+    
     fprintf('  done!\n');
 end
