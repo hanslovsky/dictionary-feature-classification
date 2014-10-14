@@ -30,8 +30,8 @@ classdef Dict2dTo3d < handle
         p2dFill3d;
         pairLocRng;
         dimXyzList;
-        allSims;
         
+        allSims;
         
         % optimization options
         Nbest = 5;
@@ -84,7 +84,7 @@ classdef Dict2dTo3d < handle
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
             
-%             this.allSims = this.allSimilarities();
+            this.allSims = this.allSimilaritiesFast();
 
         end
         
@@ -176,7 +176,76 @@ classdef Dict2dTo3d < handle
             
             patch = [];
         end
-        
+       
+        function [ patches3d ] = build3dDictionary( this, dict3dSize )
+            n = 0;
+            patches3d = zeros( dict3dSize, prod( this.sz3d ));
+            while( n < dict3dSize )
+                patchParams = this.build3dPatch();
+                pv = this.patchFromParams( patchParams );
+                if( ~isempty( pv ))
+                    n = n + 1;
+                    patches3d(n,:) = pv;
+                    
+                end
+            end
+        end
+
+        % splNode must be a sortedTreeNode< SubPatch2dLocation >
+        function [ pv, patch ] = patchFromParams( this, splNode )
+            
+            if( isempty( splNode ))
+                patch = [];
+                pv = [];
+                return;
+            end
+            
+            % check validity of input
+            if( isa( splNode, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
+                if( ~ isa( splNode.getData(), 'net.imglib2.algorithms.patch.SubPatch2dLocation' ))
+                    error( 'splNode must contain a ''net.imglib2.algorithms.patch.SubPatch2dLocation'' ');    
+                end
+            else
+                error( 'splNode must be a ''net.imglib2.algorithms.opt.astar.SortedTreeNode'' ');
+            end
+            
+            paramNode = splNode;
+            param     = paramNode.getData();
+            
+            numConstraints = splNode.getDepth() + 1;
+            
+            N = numConstraints .* prod( this.sz2d );  % the number of constraints
+            M = prod( this.sz3d ); % the number of elements in the HR patch
+            
+            cmtx = zeros( N, M );
+            b    = zeros( N, 1 );
+            
+            k = 1;
+            for i = 1:numConstraints
+
+                dim = param.dim; 
+                xyz = param.xyz;
+                idx = param.idx;
+                
+                msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
+                
+                for j = 1:prod(this.sz2d)
+                    cmtx( k, (msk == j) ) = 1;
+                    b( k ) = this.D2d( idx, j );
+                    k = k + 1;
+                end
+                
+                paramNode = splNode.getParent();
+                param     = paramNode.getData();
+            end
+            
+            pv = pinv( cmtx ) * b;
+            if( nargout > 1 )
+                patch = reshape( pv, this.sz3d );
+            end
+            
+        end
+
         function [patchParams,iteration] = build3dPatch( this )
             
             import net.imglib2.algorithms.patch.*;
@@ -414,7 +483,11 @@ classdef Dict2dTo3d < handle
             end
             cost = max( similarityList );
         end
-        
+       
+        function alpha = encode3dPatch( this, patch )
+            alpha = []; 
+        end
+            
         % make this methods abstract when more possibilities are available
         % this version will use unconstrained linear least squares 
         function [ sim, x, cmtx, b, pm1, pm2, overlap ] = patchSimilarity( this, p1, xyz1, n1, p2, xyz2, n2 )
@@ -437,6 +510,80 @@ classdef Dict2dTo3d < handle
             sim = sum((cmtx*x - b).^2);
         end
         
+        
+        % returns a 4d array describing the similarities between all pairs
+        % of patches in all positions / orientations
+        % 
+        % dimensions are : ( patch1Index patch2Index patch1XyzDim patch2XyzDim )
+        % the this.dimXyzList property stores the patch orientations.
+        %
+        % As an example:
+        % allSims( i, j, k, l ) stores the similarities for patches i and j
+        %   for orientations 
+        %   this.dimXyzList( k ) and
+        %   this.dimXyzList( l ) 
+        %
+        function allSims = allSimilaritiesFast( this )
+            sz3 = this.sz3d;
+            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+            N = numel(dList);
+            
+            %             this.dimXyzList = [ dList(:), xyzList(:) ];
+            
+            allSims = 9999.*ones( this.numDict, this.numDict, N, N );
+            for k = 1:N
+                xyz1 = xyzList(k);
+                n1   = dList(k);
+                
+                for l = 1:N
+                    
+                    % don't bother computing similarities
+                    % for identical orientations - they'll
+                    % never be used
+                    if( l == k )
+                        continue;
+                    end
+                    
+                    xyz2 = xyzList(l);
+                    n2   = dList(l);
+                    
+                    % skip when the constraint planes are 'parallel'
+                    % because this will never be used.
+                    if( n1 == n2 )
+                       continue; 
+                    end
+                    
+                    pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
+                    pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+                    overlap = (pm1 > 0) & (pm2 > 0);
+                    
+                    [ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
+                    [ cmtx2, idxs2 ] = Dict2dTo3d.contraintsMtx( overlap, pm2 );
+                    
+                    cmtx = [ cmtx1; cmtx2 ];
+                    cmtxi = pinv( cmtx );
+                    
+                    for i = 1:this.numDict
+                        b1 = this.D2d(i,idxs1);
+
+                        for j = i:this.numDict
+                            b2 = this.D2d(j,idxs2);
+                            
+                            b    = [ b1'; b2' ];
+                            x = cmtxi * b;
+                            sim = sum(( cmtx*x - b ).^2);
+                            
+                            allSims( i, j, k, l ) = sim;
+                            allSims( j, i, k, l ) = sim;
+                        end
+                    end
+                end
+%                 endtime = toc;
+%                 fprintf('time: %fs\n', endtime );
+            end
+            
+        end
+        
         % returns a 4d array describing the similarities between all pairs
         % of patches in all positions / orientations
         % 
@@ -456,15 +603,25 @@ classdef Dict2dTo3d < handle
             
 %             this.dimXyzList = [ dList(:), xyzList(:) ];
             
-            allSims = zeros( this.numDict, this.numDict, N, N );
+            allSims = 9999.*ones( this.numDict, this.numDict, N, N );
             for i = 1:this.numDict
+                fprintf('i: %d of %d\n', i, this.numDict );
                 p1 = reshape( this.D2d(i,:), this.sz2d );
                 for j = i:this.numDict
                     p2 = reshape( this.D2d(j,:), this.sz2d );
                     for k = 1:N
                         xyz1 = xyzList(k);
                         n1   = dList(k);
+
                         for l = 1:N
+
+                            % don't bother computing similarities
+                            % for identical orientations - they'll
+                            % never be used
+                            if( l == k )
+                                continue;
+                            end
+
                             xyz2 = xyzList(l);
                             n2   = dList(l);
                             sim = this.patchSimilarity( p1, xyz1, n1, p2, xyz2, n2 );
@@ -474,6 +631,7 @@ classdef Dict2dTo3d < handle
                         end
                     end
                 end
+%                 fprintf('time: %fs\n', endtime );
             end
             
         end
@@ -744,6 +902,24 @@ classdef Dict2dTo3d < handle
             L = sum( numValid );
             
             simMtx = zeros( N , L );
+        end
+        
+        function [cmtx, idxs ] = contraintsMtx( constraintPtMask, pm )
+            
+            pm = pm( constraintPtMask );
+            
+            % remove zero
+            % since it indicates points not in the patch
+            patchIdxsInMask = setdiff( unique( pm ), 0 );
+            
+            N = length( patchIdxsInMask );  % the number of constraints
+            M = nnz( constraintPtMask ); % the number of elements in the HR patch
+            cmtx = zeros( N , M );
+            
+            for i = 1:N
+                cmtx( i,  (pm == patchIdxsInMask(i)) ) = 1;
+            end
+            idxs = pm( patchIdxsInMask );
         end
         
         function [cmtx, b] = contraintsFromMask( patch, constraintPtMask, pm )

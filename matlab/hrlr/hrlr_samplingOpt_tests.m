@@ -187,11 +187,15 @@ sz = 9;
 f  = 3;
 d23 = Dict2dTo3d( X, sz, f );
 
-%%
+dict3d = d23.build3dDictionary( 2 );
 
-best = d23.build3dPatch();
-
-root = d23.p2dFill3d.getRoot();
+% %
+% best = d23.build3dPatch();
+% root = d23.p2dFill3d.getRoot();
+% 
+% %
+% patch = d23.patchFromParams( best );
+% imdisp( permute(patch, [1 2 4 3]), 'border', 0.02 );
 
 %% print out full parameters
 
@@ -207,9 +211,138 @@ while( ~printme.isRoot())
                 printme.getData().dim, ...
                 printme.getData().xyz, ...
                 printme.getData().idx ];
-                
 end
 params
+
+%%
+sz3d = [ sz sz sz ];
+
+N = size(params,1) .* sz .* sz ;  % the number of constraints
+M = prod( sz3d ); % the number of elements in the HR patch
+
+cmtx = zeros( N, M );
+b    = zeros( N, 1 );
+
+k = 1;
+for i = 1:size(params,1)
+
+    dim = params(i,1);
+    xyz = params(i,2);
+    
+    msk = Dict2dTo3d.planeMaskF( sz3d, xyz, dim, f);
+    
+    for j = 1: sz*sz
+        cmtx( k, (msk == j) ) = 1;
+        b( k ) = 1;
+        k = k + 1;
+    end
+end
+
+%%
+
+pv = pinv( cmtx ) * b;
+patch = reshape( pv, sz3d );
+
+imdisp( permute(patch, [1 2 4 3]), 'border', 0.02 );
+
+%% look for symmetries in allSims struct
+
+clear d23;
+X = rand( 2, 81);
+sz = 9;
+f  = 3;
+d23 = Dict2dTo3d( X, sz, f );
+
+allSims = d23.allSims;
+
+i = 1;
+j = 2;
+
+dimXyzSims1 = squeeze(allSims( i, j, :, :));
+dimXyzSims2 = squeeze(allSims( j, i, :, :));
+
+d23.dimXyzList
+
+%% try out some ideas for optimization
+
+sz3 = [ sz sz sz ];
+
+xyz1 = 1;
+n1   = 1;
+
+xyz2 = 1;
+n2   = 2;
+
+p1 = reshape( X(1,:), [sz sz]);
+p2 = reshape( X(2,:), [sz sz]);
+
+num = size(d23.dimXyzList,1);
+allCmtx1 = [];
+allCmtx2 = [];
+for ii = 1:num
+    
+    xyz1 = d23.dimXyzList(ii,2);
+    n1   = d23.dimXyzList(ii,1);
+    
+    for jj = 1:num
+        
+        if( jj == ii )
+            continue;
+        end
+        
+        xyz2 = d23.dimXyzList(jj,2);
+        n2   = d23.dimXyzList(jj,1);
+        
+        pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, f );
+        pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, f );
+        overlap = (pm1 > 0) & (pm2 > 0);
+        
+        if( nnz( overlap ) == 0 )
+            continue;
+        end
+        
+        [cmtx1, b1] = Dict2dTo3d.contraintsFromMask( p1, overlap, pm1 );
+        [cmtx2, b2] = Dict2dTo3d.contraintsFromMask( p2, overlap, pm2 );
+       
+        size( cmtx1 )
+        size( cmtx2 )
+        
+        allCmtx1 = cat( 3, allCmtx1, cmtx1 );
+        allCmtx2 = cat( 3, allCmtx2, cmtx2 );
+    end
+end
+
+size( allCmtx1 )
+size( allCmtx2 )
+
+figure; imdisp( permute( allCmtx1, [1 2 4 3]), 'border', 0.02 );
+figure; imdisp( permute( allCmtx2, [1 2 4 3]), 'border', 0.02 );
+
+%% test contraint matrices 
+sz = 9;
+sz3 = [sz sz sz];
+f   = 3;
+
+xyz1 = 1;
+n1   = 1;
+
+xyz2 = 1;
+n2   = 2;
+
+X = rand( 2, 81);
+
+pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, f );
+pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, f );
+overlap = (pm1 > 0) & (pm2 > 0);
+
+[ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
+[ cmtx2, idxs2 ] = Dict2dTo3d.contraintsMtx( overlap, pm2 );
+
+cmtx = [ cmtx1; cmtx2 ];
+cmtxi = pinv( cmtx );
+
+p1 = reshape( X(1,:), [sz sz]);
+p2 = reshape( X(2,:), [sz sz]);
 
 %% test data for constraints 
 % sz = [ 9 9 9 ];

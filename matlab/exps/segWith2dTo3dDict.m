@@ -1,4 +1,10 @@
 %% segWith2dTo3dDict
+%
+% dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500');
+% dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500, build 3d dict( 200 )');
+
+global SAVEPATH
+global SAVEPREFIX
 
 %% helper functions 
 
@@ -15,18 +21,21 @@ ds_test     =  3;
 ds = ds_medulla(ds_training, ds_test);
 
 % dictionary building parameters
-param.K = 100;  % dictionary size
+param.K = 200;  % dictionary size
 param.lambda=0.1;
 param.numThreads=4; % number of threads
 param.verbose=0;
-param.iter = 250;  % num iterations.
+param.iter = 500;  % num iterations.
 
 num = 50;
 patchSize = [9 9];
 dsFactor  = 3;
 
-N = 10000;
+N = 1000000;
 numTrees = 100;
+dictSize3d = 200;
+
+doClassification = 0;
 
 basedir = '/groups/saalfeld/home/bogovicj/projects/dictionary/dict2dTo3d';
 
@@ -40,8 +49,8 @@ im_test = ds.data_fn{3};
 lb_test = ds.labels_fn{3};
 mk_test = ds.mask_fn{3};
 
-
 %% grab data for building dictionary
+
 
 % [X_test, coords] = grabPatchesSimple( im, patchSize, N, [], mk );
 
@@ -55,18 +64,22 @@ Y_trn = [ zeros(N,1); ones(N,1) ];
 
 D = mexTrainDL( X_trn', param );
 
-destdir = sprintf('%s%sdict_%s', basedir, filesep, datestr(now, 30));
-mkdir( destdir );
+% destdir = sprintf('%s%sdict_%s', basedir, filesep, datestr(now, 30));
+% mkdir( destdir );
 
-save( fullfile( destdir, 'dict'), 'D', 'param');
+save( fullfile( SAVEPATH, [SAVEPREFIX,'_dict']), 'D', 'param');
 
 %% train classifier
-
+if ( doClassification )
+    
 alpha_trn = encoding( X_trn', D, 'sc', [], param );
 alpha_trn = full(alpha_trn');
 
 fprintf('training classifier\n');
 classifier = classifyRF( alpha_trn, Y_trn, numTrees, {});
+
+fprintf('saving classifier\n');
+save( fullfile( SAVEPATH, [SAVEPREFIX,'_classifierRF']), 'classifier' );
 
 pred_trn  = evaluateRF( classifier, alpha_trn );
 trn_errors = ( pred_trn - Y_trn );
@@ -101,27 +114,30 @@ tst_tnc    = nnz( tst_errors == 0 & Y_tst == 0 );
 tst_acc = nnz( tst_errors == 0 )./length(Y_tst);
 tst_acc
 
+end
 %% try building a 3d dictionary from the 2d one
 
 clear d23; 
 d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+d23.build3dDictionary( dictSize3d );
 
-[patchParams,iteration] = d23.build3dPatch();
+save( fullfile( SAVEPATH, [SAVEPREFIX,'_d23']), 'd23', 'param');
 
 %%
 
-printme = patchParams
-params = [  patchParams.getData().dim, ...
-            patchParams.getData().xyz, ...
-            patchParams.getData().idx ];
-        
-i = 1;
-while( ~printme.isRoot())
-    printme = printme.getParent();
-    params = [ params; ...
-                printme.getData().dim, ...
-                printme.getData().xyz, ...
-                printme.getData().idx ];
-                
-end
-params
+% printme = patchParams
+% params = [  patchParams.getData().dim, ...
+%             patchParams.getData().xyz, ...
+%             patchParams.getData().idx ];
+%         
+% i = 1;
+% while( ~printme.isRoot())
+%     printme = printme.getParent()
+%     params = [ params; ...
+%                 printme.getData().dim, ...
+%                 printme.getData().xyz, ...
+%                 printme.getData().idx ];
+%                 
+% end
+% params
+
