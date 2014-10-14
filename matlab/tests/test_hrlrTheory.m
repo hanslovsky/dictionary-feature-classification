@@ -121,11 +121,8 @@ fval
 A = [ 1 1 0 0; 0 0 1 1; 1 0 1 0; 0 1 0 1 ];
 
 x = pinv(A) * beq;
-
-
 x
 mean([X(1:4) X(5:8)],2)
-
 
 xb = [ x; x ]
 % norm( xb' * H * xb )
@@ -179,7 +176,7 @@ wrongCount = 0 ;
 rightCount = 0 ;
 
 opts = optimoptions('quadprog');
-ops.Display = 'off';
+opts.Display   = 'off';
 opts.Algorithm = 'interior-point-convex';
 
 for i = 1:N
@@ -284,8 +281,8 @@ x = pinv(A)*beq;
 simUCLast = [];
 simCLast  = [];
 
-sz = 9;
-f  = 3;
+sz = 30;
+f  = 10;
 
 sz3 = [sz sz sz];
 
@@ -304,7 +301,11 @@ numSame       = 0;
 numConsistent = 0;
 numTransitive = 0;
 
-for n = 1:101
+N = 251;
+Xuc = zeros( N, 1 );
+Yc = zeros( N, 1 );
+
+for n = 1:N
     
     patch1 = rand( sz, sz );
     patch2 = rand( sz, sz );
@@ -367,14 +368,15 @@ for n = 1:101
 %     simC
 %     simUC
 
+    Xuc( n ) = simUC;
+    Yc ( n ) = simC;
+
     if ( (simC > simCCompare && simUC > simUCCompare) || ...
          (simC < simCCompare && simUC < simUCCompare) )
        
         numTransitive = numTransitive + 1;
     end
-   
-
-    
+       
     if( n > 1 )
         if( simC > simUC && simCLast > simUCLast )
             numConsistent = numConsistent + 1;
@@ -397,7 +399,21 @@ numSame
 numConsistent
 numTransitive
 
-% no... why not?
+%%
+
+plot( Xuc, Yc, '.' );
+xlabel('unconstrained min');
+ylabel('constrained min');
+
+xmin = min( Xuc );
+xmax = max( Xuc );
+
+hold on;
+plot( [xmin xmax], [xmin xmax], '--k');
+
+% export_fig('~/unconstrainedVsConstrainedPatchSim_s9f3.png', '-m2' )
+% export_fig('~/unconstrainedVsConstrainedPatchSim_s15f5.png', '-m2' )
+% export_fig('~/unconstrainedVsConstrainedPatchSim_s30f10.png', '-m2' )
 
 %%
 
