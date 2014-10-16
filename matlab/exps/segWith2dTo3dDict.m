@@ -64,9 +64,6 @@ Y_trn = [ zeros(N,1); ones(N,1) ];
 
 D = mexTrainDL( X_trn', param );
 
-% destdir = sprintf('%s%sdict_%s', basedir, filesep, datestr(now, 30));
-% mkdir( destdir );
-
 save( fullfile( SAVEPATH, [SAVEPREFIX,'_dict']), 'D', 'param');
 
 %% train classifier
@@ -115,6 +112,7 @@ tst_acc = nnz( tst_errors == 0 )./length(Y_tst);
 tst_acc
 
 end
+
 %% try building a 3d dictionary from the 2d one
 
 clear d23; 

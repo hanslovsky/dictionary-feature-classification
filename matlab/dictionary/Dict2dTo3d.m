@@ -8,11 +8,15 @@ classdef Dict2dTo3d < handle
     % HHMI
     % September 2014
     
-    properties ( SetAccess = private )
+    properties ( SetAccess = protected )
         
         D2d;      % The dictionary elements
         numDict;  % Number of 2d dictionary elements
         sums2d;   % the dictionary element sums
+        
+        D3d;        % the 3d dictionary
+        numDict3d;  % number of 3d dictionary elements
+        
         
         sz2d;     % the size of 2d patches
         sz3d;     % the size of 3d patches
@@ -42,12 +46,12 @@ classdef Dict2dTo3d < handle
     
     methods
         
+
+        function this = Dict2dTo3d( D2d, sz, f )
         % Constructor
         % D2d - 
         % sz  - size of 2d patches
-        % f   - downsampling factor
-        function this = Dict2dTo3d( D2d, sz, f )
-            
+        % f   - downsampling factor  
             
 %             import net.imglib2.algorithms.opt.astar.AStarMax;
             import net.imglib2.algorithms.patch.Patch2dFill3d;
@@ -84,7 +88,7 @@ classdef Dict2dTo3d < handle
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
             
-            this.allSims = this.allSimilaritiesFast();
+%             this.allSims = this.allSimilaritiesFast();
 
         end
         
@@ -178,9 +182,12 @@ classdef Dict2dTo3d < handle
         end
        
         function [ patches3d ] = build3dDictionary( this, dict3dSize )
+            this.numDict3d = dict3dSize;
+            
             n = 0;
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
-            while( n < dict3dSize )
+            while( n < this.numDict3d )
+                fprintf('building 3d dictionary element %d\n', n);
                 patchParams = this.build3dPatch();
                 pv = this.patchFromParams( patchParams );
                 if( ~isempty( pv ))
@@ -189,10 +196,52 @@ classdef Dict2dTo3d < handle
                     
                 end
             end
+            
+            this.D3d = patches3d;
+        end
+        
+        function numAdded = addTemporaryPatchesToDict( this, tempPatches )
+            numAdded = size( tempPatches, 1 );
+            this.D2d = [ this.D2d; tempPatches ];
+            this.numDict = size( this.D2d, 1 );
+        end
+        
+        function removeTemporaryPatches( this, numToRemove )
+            this.D2d = this.D2d( 1: size(this.D2d,1)-numToRemove, : );
+            this.numDict = size( this.D2d, 1 );
+        end
+        
+        function newAllSims = remFromAllSims( this, numRem ) 
+            sz1 = size( this.allSims, 1 );
+            sz2 = size( this.allSims, 2 );
+            newAllSims = this.allSims( 1:sz1-numRem, 1:sz2-numRem, :, :);
+        end
+        
+        function newAllSims = addToAllSims( this, numNew ) 
+            
+            oldAllSims = this.allSims;
+            numOld = size(oldAllSims,1);
+            
+            irng = 1:numOld ;
+            jrng = (numOld +1):(numOld +numNew);
+            
+            newSims = this.specSimilaritiesFast( jrng, irng );
+            
+            newSimsSize = size( oldAllSims );
+            newSimsSize(1:2) = newSimsSize(1:2) + numNew ;
+            
+            newAllSims = zeros( newSimsSize );
+            
+            newAllSims( irng, irng, :, : ) = oldAllSims;
+            newAllSims( jrng, irng, :, : ) = newSims;
+            newAllSims( irng, jrng, :, : ) = permute( newSims, [2 1 3 4]);
+            newAllSims( jrng, jrng, :, : ) = 9999; % make this stupid high
+            this.allSims = newAllSims;
+
         end
 
         % splNode must be a sortedTreeNode< SubPatch2dLocation >
-        function [ pv, patch ] = patchFromParams( this, splNode )
+        function [ pv, patch, cmtx, b ] = patchFromParams( this, splNode )
             
             if( isempty( splNode ))
                 patch = [];
@@ -222,10 +271,11 @@ classdef Dict2dTo3d < handle
             
             k = 1;
             for i = 1:numConstraints
-
-                dim = param.dim; 
+                
+                dim = param.dim;
                 xyz = param.xyz;
                 idx = param.idx;
+                %pause;
                 
                 msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
                 
@@ -235,8 +285,10 @@ classdef Dict2dTo3d < handle
                     k = k + 1;
                 end
                 
-                paramNode = splNode.getParent();
-                param     = paramNode.getData();
+                if( ~paramNode.isRoot())
+                    paramNode = paramNode.getParent();
+                    param     = paramNode.getData();
+                end
             end
             
             pv = pinv( cmtx ) * b;
@@ -246,28 +298,49 @@ classdef Dict2dTo3d < handle
             
         end
 
-        function [patchParams,iteration] = build3dPatch( this )
+        function [patchParams,iteration] = build3dPatch( this, iniPatchFill, num2exclude )
             
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
+            
+            if( ~exist('num2exclude','var') || isempty(num2exclude))
+                num2exclude = 0;
+            end
             
             N = size( this.dimXyzList, 1 );
             
             % randomize the order in which the patch bins will be filled
             xyzn = randperm( N );
             
+            haveIni = 0;
+            if( exist( 'iniPatchFill', 'var' ) && ~isempty(iniPatchFill))
+                
+                fprintf('initializing with the input\n');
+                haveIni = 1;
+                
+                this.p2dFill3d = Patch2dFill3d( iniPatchFill );
+            
+                iniParams = Dict2dTo3d.patchParamNodeToArray( iniPatchFill );
+                
+                exclude = find( ismember(this.dimXyzList(:,1), iniParams(:,1)) & ...
+                            ismember(this.dimXyzList(:,2), iniParams(:,2)));
+                
+                xyzn = [exclude', setdiff( xyzn, exclude, 'stable')];
+                
+            end
+            
             done = false;
             iteration = 1;
             while( ~done )
-%                 iteration 
 
                 if ( iteration > this.maxItersPerPatch )
                     
                     patchParams = this.currentBestPatchParams();
                     return;
                     
-                elseif( iteration == 1 )
+                elseif( iteration == 1 && ~haveIni )
                    
+                    fprintf('initializing with random 2d patch\n');
                     ii = xyzn( 1 );
                     dimIni = this.dimXyzList( ii, 1 );
                     xyzIni = this.dimXyzList( ii, 2 );
@@ -275,7 +348,7 @@ classdef Dict2dTo3d < handle
                     % dxyzi1 = xyzn(ii);
                     
                     initialPatchIdx = randi( this.numDict );
-                    rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 )
+                    rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
                     this.p2dFill3d = Patch2dFill3d( rootSpl );
                     
                 else
@@ -291,11 +364,8 @@ classdef Dict2dTo3d < handle
                         break;
                     end
                     
-                    iiPrev = xyzn( depth + 1 );
+                    % iiPrev = xyzn( depth + 1 );
                     iiThis = xyzn( depth + 2 );
-                    
-                    % dimPrev = this.dimXyzList( iiPrev, 1 );
-                    % xyzPrev = this.dimXyzList( iiPrev, 2 );
                     
                     dimThis = this.dimXyzList( iiThis, 1 );
                     xyzThis = this.dimXyzList( iiThis, 2 );
@@ -304,24 +374,14 @@ classdef Dict2dTo3d < handle
                                 SubPatch2dLocation( dimThis, xyzThis, -1, -1 ), ...
                                 prevNode );
                     [ xsectList ] = Dict2dTo3d.intersectingParents( tmpNode );
-%                     size( xsectList )
-                            
-                    % TODO - CHECK IF PARENT LIST IS EMPTY - done!
-                    %        INCLUDE CONSTRAINTS OF nextNode in list - done
-                    % % This is old and may not be correct
-%                     [ xsectParentList ] = Dict2dTo3d.intersectingParents( prevNode );
-%                     size( xsectParentList )
-%                     
-%                     xsectList = [ prevNode.getData().dim prevNode.getData().xyz prevNode.getData().idx; ...
-%                                   xsectParentList ];
-%                     size( xsectList )
-                              
-
+                   
                     if( isempty( xsectList ))
+                        
 %                         fprintf('no intersections...picking randomly\n');
                         % pick 'Nbest' patches randomly and give them equal cost 
                         randomPatchIndexes = randi( this.numDict, 1, this.Nbest);
                         costs = ones( this.numDict, 1 );
+                        
                         % TODO - what cost should be given?
                         costs( randomPatchIndexes ) = 0;
                     else
@@ -334,41 +394,22 @@ classdef Dict2dTo3d < handle
                         
                     end
 
-                    candList = java.util.ArrayList( this.Nbest );
+                    costs = costs( 1: length(costs)-num2exclude);
+                    
                     [ sortedCosts, sortedCostIdxs ] = sort( costs );
-%                     costs
-%                     sortedCosts
-%                     sortedCostIdxs
-%                     pause;
-%                     for nn = 1:length( sortedCosts )
+                    
+                    
+                    candList = java.util.ArrayList( this.Nbest );
                     for nn = 1:this.Nbest
-%                        sortedCostIdxs(nn)
                        val = sortedCosts(nn);
                        spl = SubPatch2dLocation( dimThis, xyzThis, sortedCostIdxs(nn), val );
                        candList.add( spl );
                     end
                     
-                    % % for debug purposes
-%                     candList = java.util.ArrayList();
-%                     for nn = 1:this.Nbest
-%                        % pick random value for now
-%                        val = rand;
-%                        spl = SubPatch2dLocation( dim, xyz, nextPatchIdx(nn), val );
-%                        candList.add( spl );
-%                     end
-                    
                     this.p2dFill3d.addFromNode( prevNode, candList );
                     
-                    fprintf('iteration %d\n', iteration);
-                    fprintf('set has %d elements\n',this.p2dFill3d.getSet().size());
-                    % this.p2dFill3d
-                    
-%                     if( depth == N - 1 )
-%                         done = true;
-%                     end
                 end
                 iteration = iteration + 1;
-                %pause;
             end
         end
         
@@ -378,7 +419,7 @@ classdef Dict2dTo3d < handle
             while( it.hasNext())
                thisone = it.next(); 
                if( thisone.getDepth() == (N-1))
-                  currentBest = thisout;
+                  currentBest = thisone;
                   return;
                end
             end
@@ -484,9 +525,6 @@ classdef Dict2dTo3d < handle
             cost = max( similarityList );
         end
        
-        function alpha = encode3dPatch( this, patch )
-            alpha = []; 
-        end
             
         % make this methods abstract when more possibilities are available
         % this version will use unconstrained linear least squares 
@@ -510,7 +548,8 @@ classdef Dict2dTo3d < handle
             sim = sum((cmtx*x - b).^2);
         end
         
-        
+       
+        function allSims = allSimilaritiesFast( this )
         % returns a 4d array describing the similarities between all pairs
         % of patches in all positions / orientations
         % 
@@ -523,14 +562,15 @@ classdef Dict2dTo3d < handle
         %   this.dimXyzList( k ) and
         %   this.dimXyzList( l ) 
         %
-        function allSims = allSimilaritiesFast( this )
+            numP = size( this.D2d, 1 );
+            
             sz3 = this.sz3d;
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             N = numel(dList);
             
-            %             this.dimXyzList = [ dList(:), xyzList(:) ];
+            % this.dimXyzList = [ dList(:), xyzList(:) ];
             
-            allSims = 9999.*ones( this.numDict, this.numDict, N, N );
+            allSims = 9999.*ones( numP, numP, N, N );
             for k = 1:N
                 xyz1 = xyzList(k);
                 n1   = dList(k);
@@ -563,18 +603,100 @@ classdef Dict2dTo3d < handle
                     cmtx = [ cmtx1; cmtx2 ];
                     cmtxi = pinv( cmtx );
                     
-                    for i = 1:this.numDict
-                        b1 = this.D2d(i,idxs1);
-
-                        for j = i:this.numDict
-                            b2 = this.D2d(j,idxs2);
+                    for i = 1:numP
+                        b1 = this.D2d( i, idxs1 );
+                        
+                        for j = i:numP
+                            
+                            b2 = this.D2d( j, idxs2 );
                             
                             b    = [ b1'; b2' ];
                             x = cmtxi * b;
                             sim = sum(( cmtx*x - b ).^2);
-                            
+
                             allSims( i, j, k, l ) = sim;
                             allSims( j, i, k, l ) = sim;
+
+                        end
+                    end
+                end
+%                 endtime = toc;
+%                 fprintf('time: %fs\n', endtime );
+            end
+            this.allSims = allSims;
+        end
+        
+        
+        function allSims = specSimilaritiesFast( this, iprange, jprange )
+            
+            asym = 0;
+            if( ~exist( 'iprange', 'var') || isempty( iprange ) )
+               fprintf('default iprange\n');
+               iprange =  1 : size( this.D2d, 1 );
+               asym = 1;
+            end
+            
+            if( ~exist( 'jprange', 'var') || isempty( jprange ) )
+               fprintf('default jprange\n');
+               jprange =  1 : size( this.D2d, 1 );
+               asym = 1;
+            end
+            
+            numIp = length( iprange );
+            numJp = length( jprange );
+            
+            sz3 = this.sz3d;
+            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+            N = numel(dList);
+            
+            % this.dimXyzList = [ dList(:), xyzList(:) ];
+            
+            allSims = 9999.*ones( numIp, numJp, N, N );
+            for k = 1:N
+                xyz1 = xyzList(k);
+                n1   = dList(k);
+                
+                for l = 1:N
+                    
+                    % don't bother computing similarities
+                    % for identical orientations - they'll
+                    % never be used
+                    if( l == k )
+                        continue;
+                    end
+                    
+                    xyz2 = xyzList(l);
+                    n2   = dList(l);
+                    
+                    % skip when the constraint planes are 'parallel'
+                    % because this will never be used.
+                    if( n1 == n2 )
+                       continue; 
+                    end
+                    
+                    pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
+                    pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+                    overlap = (pm1 > 0) & (pm2 > 0);
+                    
+                    [ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
+                    [ cmtx2, idxs2 ] = Dict2dTo3d.contraintsMtx( overlap, pm2 );
+                    
+                    cmtx = [ cmtx1; cmtx2 ];
+                    cmtxi = pinv( cmtx );
+                    
+                    for i = 1:numIp
+                        b1 = this.D2d( iprange(i), idxs1 );
+                        
+                        for j = 1:numJp
+                            
+                            b2 = this.D2d( jprange(j), idxs2 );
+                            
+                            b    = [ b1'; b2' ];
+                            x = cmtxi * b;
+                            sim = sum(( cmtx*x - b ).^2);
+
+                            allSims( i, j, k, l ) = sim;
+                            
                         end
                     end
                 end
@@ -584,6 +706,8 @@ classdef Dict2dTo3d < handle
             
         end
         
+
+        function allSims = allSimilarities( this )
         % returns a 4d array describing the similarities between all pairs
         % of patches in all positions / orientations
         % 
@@ -596,8 +720,6 @@ classdef Dict2dTo3d < handle
         %   this.dimXyzList( k ) and
         %   this.dimXyzList( l ) 
         %
-        function allSims = allSimilarities( this )
-
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             N = numel(dList);
             
@@ -961,6 +1083,23 @@ classdef Dict2dTo3d < handle
             
             xsectParentList = xsectParentList(1:n,:);
             
+        end
+        
+        function params = patchParamNodeToArray( paramNode )
+            
+            params = [  paramNode.getData().dim, ...
+                        paramNode.getData().xyz, ...
+                        paramNode.getData().idx ];
+                    
+            next = paramNode;
+            while( ~next.isRoot())
+                next = next.getParent();
+                params = [ params; ...
+                    next.getData().dim, ...
+                    next.getData().xyz, ...
+                    next.getData().idx ];
+                
+            end
         end
         
     end % static methods
