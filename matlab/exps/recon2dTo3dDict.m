@@ -23,13 +23,14 @@ num = 50;
 patchSize = [9 9];
 dsFactor  = 3;
 
-N = 1000;
+N = 10000;
+Ntest = 1;
+
 numTrees = 100;
 dictSize3d = 200;
 
 doClassification = 0;
 
-basedir = '/groups/saalfeld/home/bogovicj/projects/dictionary/dict2dTo3d';
 
 %% load training images
 
@@ -50,6 +51,8 @@ mk_test = ds.mask_fn{3};
 [~, X_trn_cell, xyz_trn ] = getTrainTestData( im_trn, lb_trn, mk_trn, ...
                                               [N N], [], [patchSize dsFactor], param, dsFactor );
 
+
+%%
 X_trn = [ X_trn_cell{1}; X_trn_cell{2} ];
 
 D = mexTrainDL( X_trn', param );
@@ -58,58 +61,128 @@ D = mexTrainDL( X_trn', param );
 
 %% try building a 3d dictionary from the 2d one
 
-
-clear d23; clc;
+% D = rand( 81, 5 );
+clear d23; 
 d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+d23.allSimilaritiesFast();
 
-% d23.build3dDictionary( dictSize3d );
 % save( fullfile( SAVEPATH, [SAVEPREFIX,'_d23']), 'd23', 'param');
 
+%% evaluate reconstruction error
+ds = Tid.getDownsampler3dzRs();
+% X_tst = rand( 5, 729 );
 
-[rc, lc] = rootConstraintFromPatch( [10 9 8], 3, 3, 3 );
-iniParams = Dict2dTo3d.patchParamNodeToArray( lc )
 
-patchParams = d23.build3dPatch( lc );
+patchSizeHR = [ patchSize, patchSize(1)];
+[~, X_tst_cell ] = getTrainTestData( im_test, lb_test, mk_test, ...
+                                              [Ntest Ntest], [], patchSizeHR, param );
 
-params = Dict2dTo3d.patchParamNodeToArray( patchParams )
+X_tst = [ X_tst_cell{1}; X_tst_cell{2} ];
+X_tst_lr = (ds(X_tst', patchSizeHR, dsFactor))';
 
-isConsistent = 1;
-colset = [ 1:3; 1:3:7; ]
-for col = 1:2
-    for sv = 1:3
-        isConsistent = isConsistent & ( nnz(params(:,col) == colset(col, sv)) == 3 );
+
+numTest = size(X_tst, 1);
+
+ssdList = zeros( numTest, 1 );
+dovis = 1;
+for i = 1:numTest
+    
+    if(mod(i,10) == 0 )
+        fprintf('computing SSD test patch %d of %d', i, numTest );
+    end
+    
+    patchHR = X_tst(i,:);
+    patchLR = reshape( X_tst_lr(i,:), patchSizeHR./[1 1 dsFactor] );
+    
+    [patchLR2HRv] = d23.reconPatch( patchLR );
+    
+    ssdList(i) = sum((patchHR' - patchLR2HRv).^2);
+    
+    if( dovis )
+        pHR    = reshape( patchHR, patchSizeHR );
+        pLR2HR = reshape( patchLR2HRv', patchSizeHR );
+        
+        figure; imdisp3d( patchLR );        
+        figure; imdisp3d( pLR2HR );
+        figure; imdisp3d( pHR );
     end
 end
-isConsistent
 
-%% test supplementing old dictionary with new patches
+meanSSD = mean( ssdList );
+fprintf('mean ssd %f\n', meanSSD );
 
-D = rand( 81, 10 );
-patchSize = [ 9 9 9 ];
-dsFactor = 3;
+%% unused
+%im = read_image_stack( im_trn );
+%X_hr1 = grabPatchesSimple( im, patchSizeHR, [], {xyz_trn{1,1}, xyz_trn{1,2}, xyz_trn{1,3}});
+%X_hr2 = grabPatchesSimple( im, patchSizeHR, [], {xyz_trn{1,1}, xyz_trn{1,2}, xyz_trn{1,3}});
+%
+%size(X_hr1)
+%size(X_hr2)
+%
+%X_hr = [X_hr1; X_hr2];
+%
+%clear X_hr1 X_hr2 im;
 
-clear d23; clc;
-d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+%% test
 
-patch = rand( 3, 81 );
+% D = rand( 81, 20 );
+% patchSize = [9 9];
+% dsFactor = 3;
+% 
+% clear d23; clc;
+% d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+% d23.allSimilaritiesFast();
+% 
+% patchLR = rand( 9, 9, 3 );
+% [patchLR2HRv, patchLR2HR] = d23.reconPatch( patch );
 
-numAdded = d23.addTemporaryPatchesToDict( patch );
-iniIdx = d23.numDict-numAdded+1:d23.numDict;
-
-paramList = [ 3 3 3; 1 4 7; iniIdx]'
-
-[rc, lc] = rootConstraintFromArray( paramList );
-
-rc.printAsTree()
 
 %%
-
-newSims = d23.addToAllSims( numAdded );
-
-patchParams = d23.build3dPatch( lc, numAdded );
-
-[pv, patch] = d23.patchFromParams( patchParams );
-imdisp3d( patch )
-
+%
+%[rc, lc] = rootConstraintFromPatch( [10 9 8], 3, 3, 3 );
+%iniParams = Dict2dTo3d.patchParamNodeToArray( lc )
+%
+%patchParams = d23.build3dPatch( lc );
+%
+%params = Dict2dTo3d.patchParamNodeToArray( patchParams )
+%
+%isConsistent = 1;
+%colset = [ 1:3; 1:3:7; ]
+%for col = 1:2
+%    for sv = 1:3
+%        isConsistent = isConsistent & ( nnz(params(:,col) == colset(col, sv)) == 3 );
+%    end
+%end
+%isConsistent
+%
+%%% test supplementing old dictionary with new patches
+%
+%D = rand( 81, 10 );
+%patchSize = [ 9 9 9 ];
+%dsFactor = 3;
+%
+%clear d23; clc;
+%d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+%
+%patch = rand( 3, 81 );
+%
+%numAdded = d23.addTemporaryPatchesToDict( patch );
+%iniIdx = d23.numDict-numAdded+1:d23.numDict;
+%
+%paramList = [ 3 3 3; 1 4 7; iniIdx]'
+%
+%[rc, lc] = rootConstraintFromArray( paramList );
+%
+%rc.printAsTree()
+%
+%%%
+%
+%newSims = d23.addToAllSims( numAdded );
+%
+%patchParams = d23.build3dPatch( lc, numAdded );
+%
+%[pv, patch] = d23.patchFromParams( patchParams );
+%imdisp3d( patch )
+%
 % d23.removeTemporaryPatches( numAdded );
-
+%

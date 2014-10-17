@@ -200,46 +200,39 @@ classdef Dict2dTo3d < handle
             this.D3d = patches3d;
         end
         
-        function numAdded = addTemporaryPatchesToDict( this, tempPatches )
-            numAdded = size( tempPatches, 1 );
-            this.D2d = [ this.D2d; tempPatches ];
-            this.numDict = size( this.D2d, 1 );
+        function [ pvHR, patchHR ] = reconPatch( this, patchLR )
+            
+            patchDim = length( size(patchLR));
+            if( patchDim == 3 )
+                patch = zeros( size(patchLR,3), numel( patchLR(:,:,1)));
+               for z = 1:size(patchLR,3)
+                    patch(z,:) = reshape( patchLR(:,:,z), 1, [] );
+               end
+            else
+                patch = patchLR;
+            end
+            
+            numAdded = this.addTemporaryPatchesToDict( patch );
+            iniIdx   = (this.numDict-numAdded+1) : (this.numDict);
+            
+            paramList = [ 3 3 3; 1 4 7; iniIdx]';
+            
+            [rc, lc] = rootConstraintFromArray( paramList );
+            
+            this.addToAllSims( numAdded );
+            
+            patchParams = this.build3dPatch( lc, numAdded );
+            
+            [pvHR, patchHR] = this.patchFromParams( patchParams );
+            
+            % fprintf('finished\n');
+            
+            this.removeTemporaryPatches( numAdded );
+            this.remFromAllSims( numAdded );
+            
         end
         
-        function removeTemporaryPatches( this, numToRemove )
-            this.D2d = this.D2d( 1: size(this.D2d,1)-numToRemove, : );
-            this.numDict = size( this.D2d, 1 );
-        end
         
-        function newAllSims = remFromAllSims( this, numRem ) 
-            sz1 = size( this.allSims, 1 );
-            sz2 = size( this.allSims, 2 );
-            newAllSims = this.allSims( 1:sz1-numRem, 1:sz2-numRem, :, :);
-        end
-        
-        function newAllSims = addToAllSims( this, numNew ) 
-            
-            oldAllSims = this.allSims;
-            numOld = size(oldAllSims,1);
-            
-            irng = 1:numOld ;
-            jrng = (numOld +1):(numOld +numNew);
-            
-            newSims = this.specSimilaritiesFast( jrng, irng );
-            
-            newSimsSize = size( oldAllSims );
-            newSimsSize(1:2) = newSimsSize(1:2) + numNew ;
-            
-            newAllSims = zeros( newSimsSize );
-            
-            newAllSims( irng, irng, :, : ) = oldAllSims;
-            newAllSims( jrng, irng, :, : ) = newSims;
-            newAllSims( irng, jrng, :, : ) = permute( newSims, [2 1 3 4]);
-            newAllSims( jrng, jrng, :, : ) = 9999; % make this stupid high
-            this.allSims = newAllSims;
-
-        end
-
         % splNode must be a sortedTreeNode< SubPatch2dLocation >
         function [ pv, patch, cmtx, b ] = patchFromParams( this, splNode )
             
@@ -315,7 +308,7 @@ classdef Dict2dTo3d < handle
             haveIni = 0;
             if( exist( 'iniPatchFill', 'var' ) && ~isempty(iniPatchFill))
                 
-                fprintf('initializing with the input\n');
+                % fprintf('initializing with the input\n');
                 haveIni = 1;
                 
                 this.p2dFill3d = Patch2dFill3d( iniPatchFill );
@@ -340,7 +333,7 @@ classdef Dict2dTo3d < handle
                     
                 elseif( iteration == 1 && ~haveIni )
                    
-                    fprintf('initializing with random 2d patch\n');
+                    % fprintf('initializing with random 2d patch\n');
                     ii = xyzn( 1 );
                     dimIni = this.dimXyzList( ii, 1 );
                     xyzIni = this.dimXyzList( ii, 2 );
@@ -759,6 +752,51 @@ classdef Dict2dTo3d < handle
         end
         
     end
+    
+    methods ( Access = protected )
+        function numAdded = addTemporaryPatchesToDict( this, tempPatches )
+            numAdded = size( tempPatches, 1 );
+            this.D2d = [ this.D2d; tempPatches ];
+            this.numDict = size( this.D2d, 1 );
+        end
+        
+        function removeTemporaryPatches( this, numToRemove )
+            this.D2d = this.D2d( 1: size(this.D2d,1)-numToRemove, : );
+            this.numDict = size( this.D2d, 1 );
+        end
+        
+        function newAllSims = remFromAllSims( this, numRem )
+
+            sz1 = size( this.allSims, 1 );
+            sz2 = size( this.allSims, 2 );
+            newAllSims = this.allSims( 1:sz1-numRem, 1:sz2-numRem, :, :);
+            this.allSims = newAllSims;
+        end
+        
+        function newAllSims = addToAllSims( this, numNew ) 
+            
+            oldAllSims = this.allSims;
+            numOld = size(oldAllSims,1);
+            
+            irng = 1:numOld ;
+            jrng = (numOld +1):(numOld +numNew);
+            
+            newSims = this.specSimilaritiesFast( jrng, irng );
+            
+            newSimsSize = size( oldAllSims );
+            newSimsSize(1:2) = newSimsSize(1:2) + numNew ;
+            
+            newAllSims = zeros( newSimsSize );
+            
+            newAllSims( irng, irng, :, : ) = oldAllSims;
+            newAllSims( jrng, irng, :, : ) = newSims;
+            newAllSims( irng, jrng, :, : ) = permute( newSims, [2 1 3 4]);
+            newAllSims( jrng, jrng, :, : ) = 9999; % make this stupid high
+            this.allSims = newAllSims;
+
+        end
+
+    end 
     
     methods( Static )
         
