@@ -9,6 +9,8 @@ classdef Dict2dTo3d < handle
     % September 2014
     
     properties ( SetAccess = protected )
+
+        obj_fn;   % the file where this object is stored
         
         D2d;      % The dictionary elements
         numDict;  % Number of 2d dictionary elements
@@ -37,11 +39,14 @@ classdef Dict2dTo3d < handle
         
         allSims;
         
+
+        ndims = 3; 
+    end
+    
+    properties 
         % optimization options
         Nbest = 5;
         maxItersPerPatch = 5000;
-        
-        ndims = 3; 
     end
     
     methods
@@ -54,7 +59,7 @@ classdef Dict2dTo3d < handle
         % f   - downsampling factor  
             
 %             import net.imglib2.algorithms.opt.astar.AStarMax;
-            import net.imglib2.algorithms.patch.Patch2dFill3d;
+            import net.imglib2.algorithms.patch.*;
             import java.util.*;
 
             this.D2d     = D2d;
@@ -102,8 +107,23 @@ classdef Dict2dTo3d < handle
             xyz = this.dimXyzList( idx, 2 );
         end
         
+        function obj_fn = save( this, fn )
+            global DFEVAL_DIR;
+            if( exist( 'fn', 'var') && ~isempty( fn ) )
+                this.obj_fn = fn;
+            elseif( isempty( this.obj_fn ))
+                this.obj_fn = fullfile( DFEVAL_DIR, sprintf('Dict2dTo3d_%s.mat', ...
+                    datestr( now, 30 ) ));
+            end
+            
+            obj_fn = this.obj_fn;
+            if( ~exist( obj_fn, 'file'))
+                save( this.obj_fn, 'this' ); 
+            end
+        end
+        
         function patch = sample2dTo3d( this )
-            import net.imglib2.algorithms.patch.SubPatch2dLocation;
+            import net.imglib2.algorithms.patch.*;
             
             szSm = this.sz2d ./ this.f;
             
@@ -180,7 +200,65 @@ classdef Dict2dTo3d < handle
             
             patch = [];
         end
-       
+    
+        function [ patches3d, f_out ] = build3dDictionaryDist( this, dict3dSize, pe_batch_size )
+            global DICTPATH;
+
+            this.save();
+            
+            if( ~exist( 'pe_batch_size', 'var' ) || isempty( pe_batch_size ))
+                pe_batch_size = 10;
+            end
+            
+            % params
+            this.numDict3d = dict3dSize;
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            n = 0;
+            patches3d = zeros( dict3dSize, prod( this.sz3d ));
+            
+            % the cell array of parameters
+            num_out_args = 2; % build3dPatch has 2 output args
+            varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
+                          {'this'}, {'build3dPatch'}, {num_out_args} };
+                
+            iter = 1;
+            while( n < dict3dSize )
+                fprintf('iter %d, n = %d\n', iter, n );
+                fprintf('submitting %d jobs\n', (dict3dSize-n) );
+                
+                varargin{1} = repmat( {this.obj_fn}, dict3dSize-n, 1);
+                
+%               varargin = { repmat( {this.obj_fn},    dict3dSize-n, 1), ...
+%                            repmat( {'this'},         dict3dSize-n, 1), ...
+%                            repmat( {'build3dPatch'}, dict3dSize-n, 1), ...
+%                            repmat( {2},              dict3dSize-n, 1) };
+                % repmat( { },              dict3dSize-n, 1)
+                
+                
+                % run everything
+                f_out = qsub_dist(fun, pe_batch_size, use_gpu, ...
+                            [], [], run_script, ...
+                            varargin{:} );
+                
+                for i = 1:size(f_out,1)
+                    
+                    patchParams = f_out{i}{1}{1};
+                    pv = this.patchFromParams( patchParams );
+                    
+                    if( ~isempty( pv ))
+                        n = n + 1;
+                        patches3d(n,:) = pv;
+                    end
+                end
+                iter = iter + 1;
+            end
+            
+            this.D3d = patches3d;
+        end
+        
         function [ patches3d ] = build3dDictionary( this, dict3dSize )
             this.numDict3d = dict3dSize;
             
@@ -200,14 +278,23 @@ classdef Dict2dTo3d < handle
             this.D3d = patches3d;
         end
         
-        function [ pvHR, patchHR ] = reconPatch( this, patchLR )
+        function [ pvHR, patchHR ] = reconPatch( this, patchLR, doNorm )
+            
+            % doNormalization by default
+            if( ~exist('doNorm','var') || isempty(doNorm))
+                doNorm = 1;
+            end
             
             patchDim = length( size(patchLR));
             if( patchDim == 3 )
                 patch = zeros( size(patchLR,3), numel( patchLR(:,:,1)));
-               for z = 1:size(patchLR,3)
+                for z = 1:size(patchLR,3)
                     patch(z,:) = reshape( patchLR(:,:,z), 1, [] );
-               end
+                end
+                % normalize the observed patches
+                if( doNorm )
+                    patch = patch ./ repmat( sqrt(sum(patch.^2, 2)), 1, size(patch,2));
+                end
             else
                 patch = patchLR;
             end
@@ -342,7 +429,8 @@ classdef Dict2dTo3d < handle
                     
                     initialPatchIdx = randi( this.numDict );
                     rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
-                    this.p2dFill3d = Patch2dFill3d( rootSpl );
+                    rootNode = SortedTreeNode( rootSpl );
+                    this.p2dFill3d = Patch2dFill3d( rootNode );
                     
                 else
                     

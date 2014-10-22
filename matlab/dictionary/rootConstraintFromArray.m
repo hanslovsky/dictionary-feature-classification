@@ -22,8 +22,9 @@ for i = 2:num
     newNode = SortedTreeNode( newSpl, parent );
     
     parent = newNode;
+    
 end
+leafConstraint = parent; 
 
-leafConstraint = newNode; 
 
 end

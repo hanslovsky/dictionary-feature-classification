@@ -2,6 +2,12 @@
 %
 % dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500');
 % dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500, build 3d dict( 200 )');
+% dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500, build 3d dict( 200 ), constrained min');
+% dbstop if error; run_script('segWith2dTo3dDict', 'k=1000, N=1000000, iters=500, build 3d dict dist( 1000 ), unconstrained min');
+%
+% dbstop if error; run_script('segWith2dTo3dDict', 'test consistency UC');
+% dbstop if error; run_script('segWith2dTo3dDict', 'test consistency C');
+% dbstop if error; run_script('segWith2dTo3dDict', 'test distributed');
 
 global SAVEPATH
 global SAVEPREFIX
@@ -16,14 +22,17 @@ evaluateRF = @( rf, X )( cellfun( @str2double, rf.predict(X)) );
 
 %% params and data
 
+% set random seed
+rng(42);
+
 ds_training = 18;
 ds_test     =  3;
 ds = ds_medulla(ds_training, ds_test);
 
 % dictionary building parameters
-param.K = 200;  % dictionary size
+param.K = 1000;  % dictionary size
 param.lambda=0.1;
-param.numThreads=4; % number of threads
+param.numThreads=3; % number of threads
 param.verbose=0;
 param.iter = 500;  % num iterations.
 
@@ -32,12 +41,19 @@ patchSize = [9 9];
 dsFactor  = 3;
 
 N = 1000000;
+
 numTrees = 100;
-dictSize3d = 200;
+
+dictSize3d = 1000;
+pe_batch = 1;
 
 doClassification = 0;
+constrainedMin   = 0;
 
-basedir = '/groups/saalfeld/home/bogovicj/projects/dictionary/dict2dTo3d';
+Dfile = [];
+Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0156_segWith2dTo3dDict/exp0156_dict.mat';
+
+% basedir = '/groups/saalfeld/home/bogovicj/projects/dictionary/dict2dTo3d';
 
 %% load training images
 
@@ -51,23 +67,28 @@ mk_test = ds.mask_fn{3};
 
 %% grab data for building dictionary
 
-
-% [X_test, coords] = grabPatchesSimple( im, patchSize, N, [], mk );
-
-[~, X_trn_cell, xyz_trn ] = getTrainTestData( im_trn, lb_trn, mk_trn, ...
-                                              [N N], [], [patchSize dsFactor], param, dsFactor );
-
-X_trn = [ X_trn_cell{1}; X_trn_cell{2} ];
-Y_trn = [ zeros(N,1); ones(N,1) ];
-
-%%
-
-D = mexTrainDL( X_trn', param );
-
-% destdir = sprintf('%s%sdict_%s', basedir, filesep, datestr(now, 30));
-% mkdir( destdir );
-
-save( fullfile( SAVEPATH, [SAVEPREFIX,'_dict']), 'D', 'param');
+if( isempty( Dfile ))
+    % [X_test, coords] = grabPatchesSimple( im, patchSize, N, [], mk );
+    
+    [~, X_trn_cell, xyz_trn ] = getTrainTestData( im_trn, lb_trn, mk_trn, ...
+        [N N], [], [patchSize dsFactor], param, dsFactor );
+    
+    X_trn = [ X_trn_cell{1}; X_trn_cell{2} ];
+    Y_trn = [ zeros(N,1); ones(N,1) ];
+    
+    %%
+    
+    
+    D = mexTrainDL( X_trn', param );
+    
+    % destdir = sprintf('%s%sdict_%s', basedir, filesep, datestr(now, 30));
+    % mkdir( destdir );
+    
+    save( fullfile( SAVEPATH, [SAVEPREFIX,'_dict']), 'D', 'param');
+else
+    fprintf('loading dictionary from file: %s\n', Dfile);
+    load( Dfile );
+end
 
 %% train classifier
 if ( doClassification )
@@ -115,11 +136,23 @@ tst_acc = nnz( tst_errors == 0 )./length(Y_tst);
 tst_acc
 
 end
+
 %% try building a 3d dictionary from the 2d one
 
 clear d23; 
-d23 = Dict2dTo3dConstr( D', patchSize(1), dsFactor );
-d23.build3dDictionary( dictSize3d );
+if( constrainedMin )
+    fprintf('Constrained min\n');
+    d23 = Dict2dTo3dConstr( D', patchSize(1), dsFactor );
+else
+    fprintf('Un-constrained min\n');
+    d23 = Dict2dTo3d( D', patchSize(1), dsFactor );    
+end
+
+% d23.build3dDictionary( dictSize3d );
+[patches, out2 ] = d23.build3dDictionaryDist( dictSize3d, pe_batch );
+
+% clear the saved object
+system( sprintf('rm -v %s', d23.obj_fn ));
 
 save( fullfile( SAVEPATH, [SAVEPREFIX,'_d23']), 'd23', 'param');
 

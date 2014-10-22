@@ -85,7 +85,8 @@ classdef Dict2dTo3dConstr < Dict2dTo3d
                     
                     initialPatchIdx = randi( this.numDict );
                     rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
-                    this.p2dFill3d = Patch2dFill3d( rootSpl );
+                    rootNode = SortedTreeNode( rootSpl );
+                    this.p2dFill3d = Patch2dFill3d( rootNode );
                     
                 else
                     
