@@ -49,9 +49,12 @@ patch16 = zeros( 9, 9 );
 patch16(1:27) = 1/3;
 %patch16(1:27) = 1;
 
+patch17 = rand( 9, 9 );
+
+
 D = [   patch1(:), patch2(:), patch3(:), patch4(:), patch5(:), patch6(:), patch7(:), ...
         patch8(:), patch9(:), patch10(:), patch11(:), patch12(:), patch13(:), patch14(:),...
-        patch15(:), patch16(:)]';
+        patch15(:), patch16(:), patch17(:)]';
 
 %% generate a known patch from consistent constraints
 
@@ -76,22 +79,27 @@ clear d23;
 d23 = Dict2dTo3d( D, patchSize(1), dsFactor );
 % d23 = Dict2dTo3dConstr( D, patchSize(1), dsFactor );
 
-[ pv, patch, cmtx, b ] = d23.patchFromParams( lc );
-
-figure; imdisp3d( patch );
-
-% figure; imdisp( cmtx )
+d23.allSimilaritiesFast();
 
 %%
-
-rb = cmtx * pv;
+% [ pv, patch, cmtx, b ] = d23.patchFromParams( lc );
+% 
+% figure; imdisp3d( patch );
+% 
+% % figure; imdisp( cmtx )
+% 
+% %%
+% 
+% rb = cmtx * pv;
 
 %% look at all the constraints
-
+% 
 f = 3; 
 xyz = 1;
 dim = 3;
 
+mycmtx = zeros( 729, 729 );
+k = 1;
 for i = 1:size( patchParams, 1)
     i
     xyz = patchParams(i,2)
@@ -104,15 +112,77 @@ for i = 1:size( patchParams, 1)
     figure; imdisp3d( msk );
     figure; imdisp3d( pim );
     
+    for j = 1:81
+        mycmtx( k, (msk==j)) = 1;
+        k = k + 1;
+    end
+    figure; imdisp( mycmtx );
+    
     pause;
     close all;
 end
 
 %%
 
-imidx = zeros( [ 9 9 9 ] );
-imidx(1:end) = 1:numel(imidx);
-figure; imdisp3d(imidx);
+% imidx = zeros( [ 9 9 9 ] );
+% imidx(1:end) = 1:numel(imidx);
+% figure; imdisp3d(imidx);
+
+%% test patch to configuration similarity
+import net.imglib2.algorithms.patch.*;
+import net.imglib2.algorithms.opt.astar.*;
+            
+dimRoot  = 3;
+xyzRoot  = d23.pairLocRng(1);
+idxRoot  = 1;
+costRoot = 0;
+
+dim1  = 3;
+xyz1  = d23.pairLocRng(2);
+idx1  = 2;
+cost1 = 0;
+
+dimTest  = 1;
+xyzTest  = 1;
+idxTest  = 17;
+costTest = 0;
+
+rootNode = SortedTreeNode(  ...
+                SubPatch2dLocation( dimRoot, xyzRoot, idxRoot, costRoot ));
+
+leafNode = SortedTreeNode(  ...
+                SubPatch2dLocation( dim1, xyz1, idx1, cost1 ),...
+                rootNode );
+
+testNode = SortedTreeNode(  ...
+                SubPatch2dLocation( dimTest, xyzTest, idxTest, costTest ), ...
+                leafNode);
+%%
+
+testNode = lc.getParent();
+dimTest = lc.getData().dim;
+xyzTest = lc.getData().xyz;
+
+[ xsectList ] = Dict2dTo3d.intersectingParents( testNode )
+
+dimxyzi = find(d23.locXyzDim2Idx( dimTest, xyzTest))
+costs = d23.patchCosts( dimxyzi, xsectList );
+costs
+
+[minval, minidx ] = min(costs);
+minidx
+
+%% compute costs in some other way
+
+costs2 = d23.allPatchConfigCosts( dimTest, xyzTest, testNode );
+costs2
+[minval2, minidx2 ] = min(costs2);
+minidx2
+
+%% deeper test
+
+[costFor1, cmtx, b ] = d23.patchConfigCost( 1, dimTest, xyzTest, testNode );
+costFor1 
 
 %% test serialization
 
@@ -155,19 +225,19 @@ figure; imdisp3d(imidx);
 
 %% try a larger patch size
 
-patchSize = 15;
-dsFactor = 5;
-
-numDictElems = 25;
-
-% build random dictionary
-D = rand( numDictElems, patchSize*patchSize );
-
-d23 = Dict2dTo3d( D, patchSize, dsFactor );
-dsFactor = 5;
-
-d23.allSimilaritiesFast();
-d23.build3dDictionary( 5 );
+% patchSize = 15;
+% dsFactor = 5;
+% 
+% numDictElems = 25;
+% 
+% % build random dictionary
+% D = rand( numDictElems, patchSize*patchSize );
+% 
+% d23 = Dict2dTo3d( D, patchSize, dsFactor );
+% dsFactor = 5;
+% 
+% d23.allSimilaritiesFast();
+% d23.build3dDictionary( 5 );
 
                                  
 %% test distributed 

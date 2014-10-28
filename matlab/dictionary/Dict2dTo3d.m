@@ -47,6 +47,9 @@ classdef Dict2dTo3d < handle
         % optimization options
         Nbest = 5;
         maxItersPerPatch = 5000;
+        minDictElemDiff = 0.001;
+        
+        verbose = 1;
     end
     
     methods
@@ -64,13 +67,14 @@ classdef Dict2dTo3d < handle
 
             this.D2d     = D2d;
             this.numDict = size( this.D2d, 1 );
+            this.numDict3d = this.numDict;
            
             this.f    = f;
             
-            if( length(sz ) > 2 )
+            if( length( sz ) > 2 )
                error('sz must be a 2-vector or scalar');
             end
-            if( length(sz ) == 2 )
+            if( length( sz ) == 2 )
                 if( sz(1) ~= sz(2) )
                     error('sz must be a 2-vector');
                 end
@@ -95,6 +99,40 @@ classdef Dict2dTo3d < handle
             
 %             this.allSims = this.allSimilaritiesFast();
 
+        end
+        
+        function obj = copy(this)
+            obj = Dict2dTo3d( this.D2d, this.sz2d(1), this.f );
+            obj.sz3d = this.sz3d;
+            
+            obj.D3d = this.D3d;
+            obj.numDict3d = this.numDict3d;
+            
+            obj.allSims = this.allSims;
+            obj.Nbest = this.Nbest;
+            obj.maxItersPerPatch = this.maxItersPerPatch;
+            obj.verbose = this.verbose;
+            
+            obj.dimXyzList = this.dimXyzList;
+        end
+        
+        function clone(this, other)
+            %
+            this.f = other.f;
+            
+            this.D2d  = other.D2d;
+            this.sz2d = other.sz2d;
+            
+            this.sz3d = other.sz3d;
+            this.D3d  = other.D3d;
+            this.numDict3d = other.numDict3d;
+            
+            this.allSims = other.allSims;
+            this.Nbest = other.Nbest;
+            this.maxItersPerPatch = other.maxItersPerPatch;
+            this.verbose = other.verbose;
+            
+            this.dimXyzList = other.dimXyzList;
         end
         
         function idx = locXyzDim2Idx( this, dim, xyz )
@@ -226,9 +264,10 @@ classdef Dict2dTo3d < handle
                 
             iter = 1;
             while( n < dict3dSize )
-                fprintf('iter %d, n = %d\n', iter, n );
-                fprintf('submitting %d jobs\n', (dict3dSize-n) );
-                
+                if( this.verbose )
+                    fprintf('iter %d, n = %d\n', iter, n );
+                    fprintf('submitting %d jobs\n', (dict3dSize-n) );
+                end
                 varargin{1} = repmat( {this.obj_fn}, dict3dSize-n, 1);
                 
 %               varargin = { repmat( {this.obj_fn},    dict3dSize-n, 1), ...
@@ -249,6 +288,13 @@ classdef Dict2dTo3d < handle
                     pv = this.patchFromParams( patchParams );
                     
                     if( ~isempty( pv ))
+                        if( this.minDictElemDiff > 0 )
+                            mindiff = min(pdist2( pv, patches3d(1:n,:)));
+                            if( mindiff < this.minDictElemDiff )
+                                continue;
+                            end
+                        end
+                        
                         n = n + 1;
                         patches3d(n,:) = pv;
                     end
@@ -265,12 +311,21 @@ classdef Dict2dTo3d < handle
             n = 0;
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
             while( n < this.numDict3d )
-                fprintf('building 3d dictionary element %d\n', n);
+                if( this.verbose )
+                    fprintf('building 3d dictionary element %d\n', n);
+                end
                 patchParams = this.build3dPatch();
                 pv = this.patchFromParams( patchParams );
-                if( ~isempty( pv ))
+                if( ~isempty( pv ) )
+                    if( this.minDictElemDiff > 0 )
+                        mindiff = minpdist2( pv, patches3d(1:n,:));
+                        if( mindiff < this.minDictElemDiff )
+                           continue; 
+                        end
+                    end
+                    
                     n = n + 1;
-                    patches3d(n,:) = pv;
+                    patches3d(n,:) = pv;    
                     
                 end
             end
@@ -377,7 +432,7 @@ classdef Dict2dTo3d < handle
             end
             
         end
-
+        
         function [patchParams,iteration] = build3dPatch( this, iniPatchFill, num2exclude )
             
             import net.imglib2.algorithms.patch.*;
@@ -393,7 +448,7 @@ classdef Dict2dTo3d < handle
             xyzn = randperm( N );
             
             haveIni = 0;
-            if( exist( 'iniPatchFill', 'var' ) && ~isempty(iniPatchFill))
+            if( exist( 'iniPatchFill', 'var' ) && ~isempty( iniPatchFill ))
                 
                 % fprintf('initializing with the input\n');
                 haveIni = 1;
@@ -403,7 +458,7 @@ classdef Dict2dTo3d < handle
                 iniParams = Dict2dTo3d.patchParamNodeToArray( iniPatchFill );
                 
                 exclude = find( ismember(this.dimXyzList(:,1), iniParams(:,1)) & ...
-                            ismember(this.dimXyzList(:,2), iniParams(:,2)));
+                                ismember(this.dimXyzList(:,2), iniParams(:,2)));
                 
                 xyzn = [exclude', setdiff( xyzn, exclude, 'stable')];
                 
@@ -412,7 +467,9 @@ classdef Dict2dTo3d < handle
             done = false;
             iteration = 1;
             while( ~done )
-
+                if( this.verbose && mod(iteration, 100 ) == 0 )
+                      fprintf('iteration %d\n', iteration); 
+                end
                 if ( iteration > this.maxItersPerPatch )
                     
                     patchParams = this.currentBestPatchParams();
@@ -420,16 +477,7 @@ classdef Dict2dTo3d < handle
                     
                 elseif( iteration == 1 && ~haveIni )
                    
-                    % fprintf('initializing with random 2d patch\n');
-                    ii = xyzn( 1 );
-                    dimIni = this.dimXyzList( ii, 1 );
-                    xyzIni = this.dimXyzList( ii, 2 );
-                    
-                    % dxyzi1 = xyzn(ii);
-                    
-                    initialPatchIdx = randi( this.numDict );
-                    rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
-                    rootNode = SortedTreeNode( rootSpl );
+                    rootNode = this.build3dPatchSetup( xyzn );
                     this.p2dFill3d = Patch2dFill3d( rootNode );
                     
                 else
@@ -474,6 +522,7 @@ classdef Dict2dTo3d < handle
                         end
                         
                     end
+                    prevNode.removeChild( tmpNode );
 
                     costs = costs( 1: length(costs)-num2exclude);
                     
@@ -548,7 +597,7 @@ classdef Dict2dTo3d < handle
             end
         end
 
-        % returns 
+        
         function [ costs ] = patchCosts( this, dxyzi1, intersectionList )
             
             N = size(intersectionList,1);
@@ -574,6 +623,64 @@ classdef Dict2dTo3d < handle
             
 %             fprintf('new patch costs\n');
 %             size(costs)
+        end
+        
+        function costs = allPatchConfigCosts( this, dim, xyz, config )
+            
+            costs = zeros( this.numDict, 1 );
+            for i = 1:this.numDict
+                costs( i ) = this.patchConfigCost( i, dim, xyz, config );
+            end
+        end
+        
+        function [cost, cmtx, b] = patchConfigCost( this, patchIdx, dim, xyz, config )
+            import net.imglib2.algorithms.patch.*;
+            import net.imglib2.algorithms.opt.astar.*;
+            
+            tmpNode = SortedTreeNode( ...
+                        SubPatch2dLocation( dim, xyz, patchIdx, 9999 ), ...
+                        config );
+                    
+            
+            % build constraint mtx
+            patchNumElem   = prod( this.sz2d );
+            numConstraints = ( tmpNode.getDepth() + 1 ) * patchNumElem;
+            numVariables   = prod( this.sz3d );
+            
+            cmtx = zeros( numConstraints, numVariables );
+            b    = zeros( numConstraints, 1 );
+
+            thisNode = tmpNode;
+            
+            k = 1;
+            for i = 1 : ( tmpNode.getDepth() + 1 )
+                thisdim = thisNode.getData().dim
+                thisxyz = thisNode.getData().xyz
+                thisidx = thisNode.getData().idx
+                
+                msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+            
+                for j = 1:patchNumElem
+                    
+                    cmtx( k, (msk==j) ) = 1;
+                    b(k) = this.D2d( thisidx, j );
+                    
+                    k = k + 1;
+                end
+                
+                thisNode = thisNode.getParent();
+            end
+            
+            % for debug purposes
+%             figure; imdisp( cmtx );
+%             aaassddeeww=1;
+            
+            % solve and compute the cost
+            cmtxi = pinv( cmtx );
+            x = cmtxi * b;
+            cost = norm( cmtx * x - b );
+            
+            config.removeChild( tmpNode );
         end
         
         function [ cost ] = patchCostsAllSlow( this, xyz1, n1, intersectionList )
@@ -629,7 +736,6 @@ classdef Dict2dTo3d < handle
             sim = sum((cmtx*x - b).^2);
         end
         
-       
         function allSims = allSimilaritiesFast( this )
         % returns a 4d array describing the similarities between all pairs
         % of patches in all positions / orientations
@@ -787,7 +893,6 @@ classdef Dict2dTo3d < handle
             
         end
         
-
         function allSims = allSimilarities( this )
         % returns a 4d array describing the similarities between all pairs
         % of patches in all positions / orientations
@@ -884,6 +989,24 @@ classdef Dict2dTo3d < handle
 
         end
 
+        
+        function initialConstraintNode = build3dPatchSetup( this, xyzn )
+            import net.imglib2.algorithms.patch.*;
+            import net.imglib2.algorithms.opt.astar.*;
+            
+            % fprintf('initializing with random 2d patch\n');
+            ii = xyzn( 1 );
+            dimIni = this.dimXyzList( ii, 1 );
+            xyzIni = this.dimXyzList( ii, 2 );
+            
+            % dxyzi1 = xyzn(ii);
+            
+            initialPatchIdx = randi( this.numDict );
+            rootSpl = SubPatch2dLocation( dimIni, xyzIni, initialPatchIdx, 0 );
+            initialConstraintNode = SortedTreeNode( rootSpl );
+            
+        end
+        
     end 
     
     methods( Static )
