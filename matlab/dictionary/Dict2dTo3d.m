@@ -66,6 +66,9 @@ classdef Dict2dTo3d < handle
             import java.util.*;
 
             this.D2d     = D2d;
+            if( isempty( this.D2d ))
+                return;
+            end
             this.numDict = size( this.D2d, 1 );
             this.numDict3d = this.numDict;
            
@@ -121,6 +124,7 @@ classdef Dict2dTo3d < handle
             this.f = other.f;
             
             this.D2d  = other.D2d;
+            this.numDict = size( other.D2d, 1 );
             this.sz2d = other.sz2d;
             
             this.sz3d = other.sz3d;
@@ -373,11 +377,9 @@ classdef Dict2dTo3d < handle
             this.remFromAllSims( numAdded );
             
         end
-        
-        
-        % splNode must be a sortedTreeNode< SubPatch2dLocation >
+         
         function [ pv, patch, cmtx, b ] = patchFromParams( this, splNode )
-            
+        % splNode must be a sortedTreeNode< SubPatch2dLocation >   
             if( isempty( splNode ))
                 patch = [];
                 pv = [];
@@ -432,7 +434,46 @@ classdef Dict2dTo3d < handle
             end
             
         end
+       
+        function xyzn = randomFillOrderBlah( this )
+            N = size( this.dimXyzList, 1 );
+
+            isgood = 0;
+            xyzn = [];
+            while( ~isgood )
+                xyzn = randperm( N );
+                isgood = this.validateFillOrder( xyzn );
+            end
+        end
+
+        function xyzn = randomFillOrder( this )
+            N = size( this.dimXyzList, 1 );
+            i1 = randi( N, 1, 1 );
+
+            % pick a second plane that intersects the first
+            validOpts = find(this.dimXyzList(:,1) ~= this.dimXyzList(i1,1));
+            j = randi( length(validOpts), 1, 1);
+           
+            i2 = validOpts(j);
+
+            % randomly choose the order of the remaining 
+            % plane orientations
+            remi = setdiff( 1:N, [i1 i2] );
+            xyzn = [i1 i2 remi(randperm(N-2))];
+
+        end
+
+        function isgood = validateFillOrder( this, xyzn )
+        % xyzn is a fill order - determines if it is 'valid'
+        % where valid means that for i > 1, the plane defined by
+        % there exists a j such that 
+        %   this.dimXyzList(i) intersectts with this.dimXyzList(j) 
         
+            %TODO - determine if we need this and implement if so
+            %fillOrder = this.dimXyzList( xyzn, : );
+            isgood = 1;
+        end
+
         function [patchParams,iteration] = build3dPatch( this, iniPatchFill, num2exclude )
             
             import net.imglib2.algorithms.patch.*;
@@ -445,7 +486,8 @@ classdef Dict2dTo3d < handle
             N = size( this.dimXyzList, 1 );
             
             % randomize the order in which the patch bins will be filled
-            xyzn = randperm( N );
+            % xyzn = randperm( N );
+            xyzn = this.randomFillOrder();
             
             haveIni = 0;
             if( exist( 'iniPatchFill', 'var' ) && ~isempty( iniPatchFill ))
@@ -486,10 +528,9 @@ classdef Dict2dTo3d < handle
                     depth = prevNode.getDepth();
                     if( depth == N-1 )
                         
-                        % the next node is best and describes the 
-                        % parameters for the locally optimal patch
+                        % the next node is best and describes the % parameters for the locally optimal patch
                         patchParams = prevNode;
-                        
+                        done = true;
                         break;
                     end
                     
@@ -516,7 +557,8 @@ classdef Dict2dTo3d < handle
                     else
 %                         fprintf('computing costs\n');
                         if( isempty( this.allSims ))
-                            costs = this.patchCostsAllSlow( xyzThis, dimThis, xsectList );
+                            %costs = this.patchCostsAllSlow( xyzThis, dimThis, xsectList );
+                            costs = this.computeCandidateCosts( xyzThis, dimThis, prevNode );
                         else
                             costs = this.patchCosts( iiThis, xsectList );
                         end
@@ -541,6 +583,11 @@ classdef Dict2dTo3d < handle
                 end
                 iteration = iteration + 1;
             end
+        end
+         
+        function costs = computeCandidateCosts( this, xyz, dim, config )
+            fprintf('USING NEW COST METHOD!\n');
+            costs = this.allPatchConfigCosts( dim, xyz, config );
         end
         
         function currentBest = currentBestPatchParams( this )
@@ -597,7 +644,6 @@ classdef Dict2dTo3d < handle
             end
         end
 
-        
         function [ costs ] = patchCosts( this, dxyzi1, intersectionList )
             
             N = size(intersectionList,1);
@@ -637,6 +683,7 @@ classdef Dict2dTo3d < handle
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
             
+            
             tmpNode = SortedTreeNode( ...
                         SubPatch2dLocation( dim, xyz, patchIdx, 9999 ), ...
                         config );
@@ -654,10 +701,11 @@ classdef Dict2dTo3d < handle
             
             k = 1;
             for i = 1 : ( tmpNode.getDepth() + 1 )
-                thisdim = thisNode.getData().dim
-                thisxyz = thisNode.getData().xyz
-                thisidx = thisNode.getData().idx
+                thisdim = thisNode.getData().dim;
+                thisxyz = thisNode.getData().xyz;
+                thisidx = thisNode.getData().idx;
                 
+                % TODO - dont recompute this msk every time
                 msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
             
                 for j = 1:patchNumElem
@@ -714,7 +762,7 @@ classdef Dict2dTo3d < handle
         end
        
             
-        % make this methods abstract when more possibilities are available
+        % TODO make this methods abstract when more possibilities are available
         % this version will use unconstrained linear least squares 
         function [ sim, x, cmtx, b, pm1, pm2, overlap ] = patchSimilarity( this, p1, xyz1, n1, p2, xyz2, n2 )
             
@@ -1331,6 +1379,25 @@ classdef Dict2dTo3d < handle
             end
             
             xsectParentList = xsectParentList(1:n,:);
+            
+        end
+
+        function node = patchParamArrayToNode( paramArray )
+
+            import net.imglib2.algorithms.patch.*;
+            import net.imglib2.algorithms.opt.astar.*;
+
+            parentNode = []; % equivalent to java null
+
+            for i = 1:size(paramArray,1)
+
+                node = SortedTreeNode( ...
+                        SubPatch2dLocation( ...
+                            paramArray(i,1), paramArray(i,2),...
+                            paramArray(i,3), 0 ), ...
+                        parentNode);
+
+            end
             
         end
         
