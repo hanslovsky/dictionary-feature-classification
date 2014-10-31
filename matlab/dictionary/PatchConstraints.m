@@ -7,6 +7,7 @@ classdef PatchConstraints < handle
         
         pairLocRng;
         dimXyzList;
+        xsectList;
         
         cmtx;
         locToConstraint;
@@ -36,6 +37,8 @@ classdef PatchConstraints < handle
             this.pairLocRng = (1) : this.f : this.sz3d(1);
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
+            
+            this.buildIntersectionList();
         end
         
         function idx = locXyzDim2Idx( this, dim, xyz )
@@ -50,7 +53,7 @@ classdef PatchConstraints < handle
         
         function buildCmtx( this )
             patchNumElem = prod( this.sz2d );
-            numVariables   = prod( this.sz3d );
+            numVariables = prod( this.sz3d );
             
             numPatchLocs   = size( this.dimXyzList, 1 );
             numConstraints = numPatchLocs * patchNumElem;
@@ -76,7 +79,15 @@ classdef PatchConstraints < handle
             end
         end
         
-        function constraints = cmtxFromConstraints( this, node )
+        function constraints = cmtxFromConstraints( this, obj )
+            if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
+                constraints = this.cmtxFromConstraintsNode( obj );
+            else
+                constraints = this.cmtxFromConstraintsList( obj );
+            end
+        end
+        
+        function constraints = cmtxFromConstraintsNode( this, node )
             thisnode = node;
             depth = node.getDepth();
             
@@ -91,6 +102,50 @@ classdef PatchConstraints < handle
             end
               
             constraints = this.cmtx( cmtxIdxs, : );
+        end
+        
+        function constraints = cmtxFromConstraintsList( this, locXyz )
+           
+            ndim  = nnz( size(locXyz) > 1);
+            if( ndim == 1 )
+                N = numel(locXyz);
+            else
+                N = size(locXyz,1);
+            end
+            
+            cmtxIdxs = false( 1, size(locXyz,1));
+            for d = 1:N 
+                
+                if( ndim == 1)
+                    idx =  locXyz(d);
+                elseif( size( locXyz, 2) == 2)
+                    idx = this.locXyzDim2Idx(   locXyz(d,1), ...
+                                                locXyz(d,2));
+                    
+                else
+                    error('locXyz must have 1 or 2 columns ');
+                end
+                
+                cmtxIdxs = cmtxIdxs | this.locToConstraint(idx,:);
+            end
+              
+            constraints = this.cmtx( cmtxIdxs, : );
+        end
+        
+        
+        function xsectList = buildIntersectionList( this )
+            % i^th row of output xsectList
+            % is a logical vector such that the coordinates
+            % dimXyzList( xsectList,:) intersect with dimXyzList( i, :)
+            
+            numPatchLocs   = size( this.dimXyzList, 1 );
+            xsectList = false( numPatchLocs );
+            
+            for i = 1:numPatchLocs
+                xsectList(i,:) = (this.dimXyzList(:,1) ~= this.dimXyzList(i,1));
+            end
+            
+            this.xsectList = xsectList;
         end
         
     end

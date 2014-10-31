@@ -47,13 +47,17 @@ classdef PatchConstraintsTests < matlab.unittest.TestCase
                     msk = Dict2dTo3d.planeMaskF( thisobj.sz3d, dxl(j,2), dxl(j,1), thisobj.f );
                     cmtxTrue = Dict2dTo3d.contraintsMtx( true(thisobj.sz3d), msk );
                     
-                    figure; imagesc( cmtx );
-                    figure; imagesc( cmtxTrue );
+                    % figure; imagesc( cmtx );
+                    % figure; imagesc( cmtxTrue );
                     
                     tc.assertEqual( cmtx, cmtxTrue );
                 end
                 
             end  
+        end
+        
+        function testCmtxConstraintsSubset( tc )
+            
         end
         
     end
