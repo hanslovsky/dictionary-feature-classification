@@ -11,6 +11,10 @@ classdef PatchConstraints < handle
         
         cmtx;
         locToConstraint;
+        
+        subCmtxAndInvs;
+        constraintVecXsectSubsets; % 
+        constraintVecSubsets; % 
     end
     
     methods
@@ -60,11 +64,16 @@ classdef PatchConstraints < handle
             
             this.cmtx = zeros( numConstraints, numVariables );
             this.locToConstraint = false( numPatchLocs, numConstraints );
+            this.constraintVecSubsets = false( numPatchLocs, numConstraints );
             
             k = 1;
             for i = 1 : numPatchLocs
                 thisdim = this.dimXyzList(i,1);
                 thisxyz = this.dimXyzList(i,2);
+                
+                rngStart = ( patchNumElem * (i-1) + 1);
+                rng =  rngStart : rngStart + patchNumElem - 1;
+                this.constraintVecSubsets( i , rng ) = true;
                 
                 % TODO - dont recompute this msk every time
                 msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
@@ -76,6 +85,23 @@ classdef PatchConstraints < handle
                     
                     k = k + 1;
                 end
+            end
+        end
+        
+        function compXsectInverses( this )
+            N =  size(this.locToConstraint, 1);
+            this.subCmtxAndInvs = cell( N, 2 );
+            this.constraintVecXsectSubsets = cell( N ,2 );
+            for i = 1:N
+                [subcmtx, bxsectList] = ...
+                        this.cmtxFromConstraintsList( this.xsectList(i,:));
+                    
+                cmtxInv = pinv( subcmtx );
+                this.subCmtxAndInvs{i,1} = subcmtx;
+                this.subCmtxAndInvs{i,2} = cmtxInv;
+                
+                % determine the 
+                this.constraintVecXsectSubsets{i} = bxsectList;
             end
         end
         
@@ -104,8 +130,13 @@ classdef PatchConstraints < handle
             constraints = this.cmtx( cmtxIdxs, : );
         end
         
-        function constraints = cmtxFromConstraintsList( this, locXyz )
-           
+        function [constraints, binds] = cmtxFromConstraintsList( this, locXyz )
+        % outputs a constraint matrix from a list of constraints
+
+            if( islogical( locXyz ))
+                locXyz = find( locXyz );
+            end
+
             ndim  = nnz( size(locXyz) > 1);
             if( ndim == 1 )
                 N = numel(locXyz);
@@ -114,6 +145,7 @@ classdef PatchConstraints < handle
             end
             
             cmtxIdxs = false( 1, size(locXyz,1));
+            binds    = false( 1, prod( this.sz3d) );
             for d = 1:N 
                 
                 if( ndim == 1)
@@ -127,11 +159,11 @@ classdef PatchConstraints < handle
                 end
                 
                 cmtxIdxs = cmtxIdxs | this.locToConstraint(idx,:);
+                binds = binds | this.constraintVecSubsets( idx,: );
             end
               
             constraints = this.cmtx( cmtxIdxs, : );
         end
-        
         
         function xsectList = buildIntersectionList( this )
             % i^th row of output xsectList
@@ -146,6 +178,63 @@ classdef PatchConstraints < handle
             end
             
             this.xsectList = xsectList;
+        end
+           
+        function b = constraintValue( this, patchMtx, obj )
+            if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
+                b = this.constraintValueNode( patchMtx, obj );
+            else
+                b = this.constraintValueList( patchMtx, obj );
+            end
+        end
+        
+        function b = constraintValueNode( this, patchMtx, node )
+            b = [];
+            error('not yet implemented');
+        end
+        
+        function b = constraintValueList( this, patchMtx, idxList )
+            
+            if( islogical( idxList ))
+                idxList = find( idxList );
+            end
+            
+            ndim  = nnz( size(idxList) > 1);
+            if( ndim == 1 )
+                N = numel(idxList);
+            else
+                N = size(idxList,1);
+            end
+            
+            patchNumElem = prod( this.sz2d );
+            M = patchNumElem * N;
+            
+            b = zeros( M, 1 );
+            brng = 1:patchNumElem;
+            for i = 1:N
+                if( ndim == 1)
+                    idx =  idxList( i );
+                elseif( size( idxList, 2) == 2 )
+                    idx = this.locXyzDim2Idx(   idxList(i,1), ...
+                                                idxList(i,2));
+                end
+                b(brng) = patchMtx( idx, : );
+                brng = brng + patchNumElem;
+            end
+        end
+        
+        function bnew = updateConstraints( this, patchMtx, b, j, idx )
+        % bnew = updateConstraints( this, patchMtx, b, j, idx )
+        %   patchMtx - N x M matrix where N is number of dictionary elements
+        %   b        - current b vector
+        %   j        - index of patch location (into dimXyzList)
+        %   idx      - index into patchMtx of replacing patch
+            bnew = b;
+            patchNumElem = prod( this.sz2d );
+            start = patchNumElem * (j - 1) + 1;
+            rng = start : start + patchNumElem;
+            
+            bnew( rng ) = patchMtx( idx, : );
         end
         
     end
