@@ -9,7 +9,8 @@ classdef PatchConstraints < handle
         dimXyzList;
         xsectList;
         
-        cmtx;
+        cmtx;     % the constraint matrix 
+        cmtxInv;  % pseudo-inverse of the constraint matrix
         locToConstraint;
         
         subCmtxAndInvs;
@@ -86,6 +87,8 @@ classdef PatchConstraints < handle
                     k = k + 1;
                 end
             end
+            
+            this.cmtxInv = pinv( this.cmtx );
         end
         
         function compXsectInverses( this )
@@ -93,11 +96,16 @@ classdef PatchConstraints < handle
             this.subCmtxAndInvs = cell( N, 2 );
             this.constraintVecXsectSubsets = cell( N ,2 );
             for i = 1:N
+                inds = this.xsectList(i,:);
+                
                 [subcmtx, bxsectList] = ...
-                        this.cmtxFromConstraintsList( this.xsectList(i,:));
-                    
-                cmtxInv = pinv( subcmtx );
-                this.subCmtxAndInvs{i,1} = subcmtx;
+                        this.cmtxFromConstraintsList( inds );
+                [cmtxThis, ~] = ...
+                        this.cmtxFromConstraintsList( i );
+                
+                subcmtxWCurrent = [ cmtxThis; subcmtx ];
+                cmtxInv = pinv( subcmtxWCurrent );
+                this.subCmtxAndInvs{i,1} = subcmtxWCurrent;
                 this.subCmtxAndInvs{i,2} = cmtxInv;
                 
                 % determine the 
@@ -148,7 +156,7 @@ classdef PatchConstraints < handle
             binds    = false( 1, prod( this.sz3d) );
             for d = 1:N 
                 
-                if( ndim == 1)
+                if( ndim <= 1)
                     idx =  locXyz(d);
                 elseif( size( locXyz, 2) == 2)
                     idx = this.locXyzDim2Idx(   locXyz(d,1), ...
@@ -193,8 +201,32 @@ classdef PatchConstraints < handle
             error('not yet implemented');
         end
         
-        function b = constraintValueList( this, patchMtx, idxList )
+        function [paramsOut, rowPermutation] = reorderPatchParams( this, patchParams )
+            % patchParams is an N x 3 matrix where the columns represent
+            % [ dim, xyz, idx ].
+            %
+            % This function re-orders the rows of patchParams so that
+            % the rows are in the same order as this.dimXyzList
             
+            nr = size( this.dimXyzList, 1 );
+            rowPermutation = zeros( nr, 1);
+            
+            for r = 1:nr
+                dim = this.dimXyzList(r,1);
+                xyz = this.dimXyzList(r,2);
+                
+                i = find( patchParams(:,1) == dim &  ...
+                          patchParams(:,2) == xyz );
+                rowPermutation(r) = i;
+            end
+            
+            paramsOut = patchParams( rowPermutation, : );
+            
+        end
+            
+        function b = constraintValueList( this, patchMtx, idxList )
+        % idxList must be in the same order
+        
             if( islogical( idxList ))
                 idxList = find( idxList );
             end
