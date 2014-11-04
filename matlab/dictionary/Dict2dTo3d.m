@@ -243,13 +243,17 @@ classdef Dict2dTo3d < handle
             patch = [];
         end
     
-        function [ patches3d, f_out ] = build3dDictionaryDist( this, dict3dSize, pe_batch_size )
+        function [ patches3d, f_out ] = build3dDictionaryDist( this, dict3dSize, pe_batch_size, iniout )
             global DICTPATH;
 
             this.save();
             
             if( ~exist( 'pe_batch_size', 'var' ) || isempty( pe_batch_size ))
                 pe_batch_size = 10;
+            end
+            
+            if( ~exist( 'iniout', 'var' ) || isempty( iniout ))
+                iniout = 0;
             end
             
             % params
@@ -262,10 +266,22 @@ classdef Dict2dTo3d < handle
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
             
             % the cell array of parameters
-            num_out_args = 2; % build3dPatch has 2 output args
+            num_out_args = 3; % build3dPatch has 2 output args
+            
+%             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
+%                           {'this'}, {'build3dPatch'}, {num_out_args} };
+
             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
-                          {'this'}, {'build3dPatch'}, {num_out_args} };
-                
+                          repmat( {'this'}, dict3dSize-n, 1), ...
+                          repmat( {'build3dPatch'}, dict3dSize-n, 1), ...
+                          repmat( {num_out_args}, dict3dSize-n, 1), ...
+                       };
+                      
+            if( iniout )
+                iniParams = this.iniParamsDist( dict3dSize )
+                varargin{5} = iniParams;
+            end
+            
             iter = 1;
             while( n < dict3dSize )
                 if( this.verbose )
@@ -273,13 +289,6 @@ classdef Dict2dTo3d < handle
                     fprintf('submitting %d jobs\n', (dict3dSize-n) );
                 end
                 varargin{1} = repmat( {this.obj_fn}, dict3dSize-n, 1);
-                
-%               varargin = { repmat( {this.obj_fn},    dict3dSize-n, 1), ...
-%                            repmat( {'this'},         dict3dSize-n, 1), ...
-%                            repmat( {'build3dPatch'}, dict3dSize-n, 1), ...
-%                            repmat( {2},              dict3dSize-n, 1) };
-                % repmat( { },              dict3dSize-n, 1)
-                
                 
                 % run everything
                 f_out = qsub_dist(fun, pe_batch_size, use_gpu, ...
@@ -290,9 +299,10 @@ classdef Dict2dTo3d < handle
                     
                     patchParams = f_out{i}{1}{1};
                     pv = this.patchFromParams( patchParams );
+                    pv = vecToRowCol( pv, 'row' );
                     
                     if( ~isempty( pv ))
-                        if( this.minDictElemDiff > 0 )
+                        if( n > 0 && this.minDictElemDiff > 0 )
                             mindiff = min(pdist2( pv, patches3d(1:n,:)));
                             if( mindiff < this.minDictElemDiff )
                                 continue;
@@ -301,6 +311,7 @@ classdef Dict2dTo3d < handle
                         
                         n = n + 1;
                         patches3d(n,:) = pv;
+                        
                     end
                 end
                 iter = iter + 1;
@@ -320,9 +331,11 @@ classdef Dict2dTo3d < handle
                 end
                 patchParams = this.build3dPatch();
                 pv = this.patchFromParams( patchParams );
+                pv = vecToRowCol( pv, 'row' );
+                
                 if( ~isempty( pv ) )
-                    if( this.minDictElemDiff > 0 )
-                        mindiff = minpdist2( pv, patches3d(1:n,:));
+                    if( n > 0 && this.minDictElemDiff > 0 )
+                        mindiff = min(pdist2( pv, patches3d(1:n,:)));
                         if( mindiff < this.minDictElemDiff )
                            continue; 
                         end
@@ -392,7 +405,13 @@ classdef Dict2dTo3d < handle
                     error( 'splNode must contain a ''net.imglib2.algorithms.patch.SubPatch2dLocation'' ');    
                 end
             else
-                error( 'splNode must be a ''net.imglib2.algorithms.opt.astar.SortedTreeNode'' ');
+                % here
+                try
+                    splNode = Dict2dTo3d.patchParamArrayToNode(splNode);
+                catch e
+                   error('tried to make a node from an array but failed'); 
+                end
+%                 error( 'splNode must be a ''net.imglib2.algorithms.opt.astar.SortedTreeNode'' ');
             end
             
             paramNode = splNode;
@@ -474,7 +493,7 @@ classdef Dict2dTo3d < handle
             isgood = 1;
         end
 
-        function [patchParams,iteration] = build3dPatch( this, iniPatchFill, num2exclude )
+        function [patchParams,iteration,costs] = build3dPatch( this, iniPatchFill, num2exclude )
             
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
@@ -1382,7 +1401,7 @@ classdef Dict2dTo3d < handle
             
         end
 
-        function node = patchParamArrayToNode( paramArray )
+        function [node, root ] = patchParamArrayToNode( paramArray )
 
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
@@ -1396,7 +1415,12 @@ classdef Dict2dTo3d < handle
                             paramArray(i,1), paramArray(i,2),...
                             paramArray(i,3), 0 ), ...
                         parentNode);
-
+                
+                parentNode = node;
+                
+                if( i == 1 )
+                    root = node;
+                end
             end
             
         end

@@ -4,10 +4,12 @@
 % dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500, build 3d dict( 200 )');
 % dbstop if error; run_script('segWith2dTo3dDict', 'k=200, N=100000, iters=500, build 3d dict( 200 ), constrained min');
 % dbstop if error; run_script('segWith2dTo3dDict', 'k=1000, N=1000000, iters=500, build 3d dict dist( 1000 ), unconstrained min');
+% dbstop if error; run_script('segWith2dTo3dDict', 'k=1000, D2d from exp0156, build 3d dict dist( 1000 ), sampler');
 %
 % dbstop if error; run_script('segWith2dTo3dDict', 'test consistency UC');
 % dbstop if error; run_script('segWith2dTo3dDict', 'test consistency C');
 % dbstop if error; run_script('segWith2dTo3dDict', 'test distributed');
+% dbstop if error; run_script('segWith2dTo3dDict', 'test sampler');
 
 global SAVEPATH
 global SAVEPREFIX
@@ -23,7 +25,7 @@ evaluateRF = @( rf, X )( cellfun( @str2double, rf.predict(X)) );
 %% params and data
 
 % set random seed
-rng(42);
+% rng(42);
 
 ds_training = 18;
 ds_test     =  3;
@@ -48,7 +50,11 @@ dictSize3d = 1000;
 pe_batch = 1;
 
 doClassification = 0;
-constrainedMin   = 0;
+
+% type = 'constrained';
+% type = 'unconstrained';
+opttype = 'sampler';
+minD3dDiff = -1;
 
 Dfile = [];
 Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0156_segWith2dTo3dDict/exp0156_dict.mat';
@@ -140,16 +146,28 @@ end
 %% try building a 3d dictionary from the 2d one
 
 clear d23; 
-if( constrainedMin )
-    fprintf('Constrained min\n');
-    d23 = Dict2dTo3dConstr( D', patchSize(1), dsFactor );
-else
-    fprintf('Un-constrained min\n');
-    d23 = Dict2dTo3d( D', patchSize(1), dsFactor );    
+switch( opttype )
+    case 'constrained'
+        d23 = Dict2dTo3dConstr( D', patchSize(1), dsFactor );
+    case 'unconstrained'
+        d23 = Dict2dTo3d( D', patchSize(1), dsFactor );
+    case 'sampler'
+        d23 = Dict2dTo3dSampler( D', patchSize(1), dsFactor );
+    otherwise
+        error('invalid opt type');
 end
+d23.minDictElemDiff = minD3dDiff
 
-% d23.build3dDictionary( dictSize3d );
-[patches, out2 ] = d23.build3dDictionaryDist( dictSize3d, pe_batch );
+% if( constrainedMin )
+%     fprintf('Constrained min\n');
+%     d23 = Dict2dTo3dConstr( D', patchSize(1), dsFactor );
+% else
+%     fprintf('Un-constrained min\n');
+%     d23 = Dict2dTo3d( D', patchSize(1), dsFactor );    
+% end
+
+% [patches ] = d23.build3dDictionary( dictSize3d );
+[patches, out2 ] = d23.build3dDictionaryDist( dictSize3d, pe_batch, 1 );
 
 % clear the saved object
 system( sprintf('rm -v %s', d23.obj_fn ));

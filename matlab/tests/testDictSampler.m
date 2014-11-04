@@ -90,36 +90,101 @@ patchParamsLeftOut = patchParams(2:end,:);
 [nodeTest, rootTest] = Dict2dTo3d.patchParamArrayToNode( patchParamsLeftOut );
 
 %% 
-clear d23;
-d23 = Dict2dTo3d( D, patchSize(1), dsFactor );
+% clear d23;
+% d23 = Dict2dTo3d( D, patchSize(1), dsFactor );
+% 
+% dim = patchParams( 1, 1);
+% xyz = patchParams( 1, 2);
+% idxTrue = patchParams( 1, 3);
+% 
+% costs = d23.allPatchConfigCosts( dim, xyz, nodeTest );
+% [mv, mi] = min( costs );
+% 
+% %%
+% 
+% [cost, cmtx, b1] = d23.patchConfigCost( 1, 3, 1, nodeTest );
+% 
+% %%
+% 
+% clear d23s;
+% d23s = Dict2dTo3dSampler( D, patchSize(1), dsFactor );
+% 
+% po = d23s.pc.reorderPatchParams( patchParams );
+% 
+% b = d23s.pc.constraintValueList( d23s.D2d, po(:,3) );
+% 
+% i = find(d23.locXyzDim2Idx( 3, 1 ))
+% % [ bestidx, sims, cmtx2 ] = d23s.bestPatchConfig( b, i );
+% [ bestidx, sims, cmtx2 ] = d23s.bestPatchConfigSub( b, i );
+% bestidx
 
-dim = patchParams( 1, 1);
-xyz = patchParams( 1, 2);
-idxTrue = patchParams( 1, 3);
+%% test building dictionary on random data
 
-costs = d23.allPatchConfigCosts( dim, xyz, nodeTest );
-[mv, mi] = min( costs );
+D = rand( 25, 81 );
+dsFactor = 3;
+patchSize = [ 9 9 ] ;
+
+clear d23sr;
+d23sr = Dict2dTo3dSampler( D, patchSize(1), dsFactor );
+d23sr.maxIters  = 1000;
+d23sr.convIters =   50;
+
+this = d23sr;
+
+%%
+[params, iters, costs ] = d23sr.build3dPatch();
+
+
+% params
+% iters
+% 
+% figure; plot( costs );;
+% 
+% paramsWcoords = [ d23sr.pc.dimXyzList, params ];
+% % nd = Dict2dTo3d.patchParamArrayToNode(paramsWcoords);
+% [pv, patch ] = d23sr.patchFromParams( paramsWcoords );
+% 
+% figure; imdisp3d( patch );
 
 %%
 
-[cost, cmtx, b1] = d23.patchConfigCost( 1, 3, 1, nodeTest );
+Dout = d23sr.build3dDictionary( 20 );
 
-%%
+%% plot costs over some 
 
-clear d23s;
-d23s = Dict2dTo3dSampler( D, patchSize(1), dsFactor );
+% Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0156_segWith2dTo3dDict/exp0156_dict.mat';
+% load(Dfile);
+% 
+% N = 50;
+% dsFactor = 3;
+% patchSize = [ 9 9 ] ;
+% 
+% d23sr = Dict2dTo3dSampler( D', patchSize(1), dsFactor );
+% d23sr.maxIters  = 1000;
+% d23sr.convIters =   50;
+% 
+% costList = cell( N, 1);
+% 
+% for i = 1:N
+%     i 
+%     [params, iters, costs ] = d23sr.build3dPatch();
+%     costList{i} = costs;
+%     
+% end
+% 
+% %%
+% 
+% for i = 1:N
+%     c = 0.1 + 0.9.*rand(1,3);
+%     plot( costList{i}, 'color', c); hold on;
+% 
+% end
+% 
+% xlabel('iteration');
+% ylabel('cost');
+% 
+% export_fig('/groups/saalfeld/home/bogovicj/projects/dictionary/dict2dTo3d/costPerIterSampler.png', ...
+%             '-m2', '-painters');
 
-po = d23s.pc.reorderPatchParams( patchParams );
-
-b = d23s.pc.constraintValueList( d23s.D2d, po(:,3) );
-
-
-
-%%
-
-i = find(d23.locXyzDim2Idx( 3, 1 ))
-% [ bestidx, sims, cmtx2 ] = d23s.bestPatchConfig( b, i );
-[ bestidx, sims, cmtx2 ] = d23s.bestPatchConfigSub( b, i );
-bestidx
 
 

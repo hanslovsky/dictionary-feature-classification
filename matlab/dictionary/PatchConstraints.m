@@ -244,7 +244,7 @@ classdef PatchConstraints < handle
             b = zeros( M, 1 );
             brng = 1:patchNumElem;
             for i = 1:N
-                if( ndim == 1)
+                if( ndim <= 1)
                     idx =  idxList( i );
                 elseif( size( idxList, 2) == 2 )
                     idx = this.locXyzDim2Idx(   idxList(i,1), ...
@@ -264,7 +264,7 @@ classdef PatchConstraints < handle
             bnew = b;
             patchNumElem = prod( this.sz2d );
             start = patchNumElem * (j - 1) + 1;
-            rng = start : start + patchNumElem;
+            rng = start : start + patchNumElem - 1;
             
             bnew( rng ) = patchMtx( idx, : );
         end

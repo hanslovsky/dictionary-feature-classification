@@ -9,9 +9,16 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
     % HHMI
     % September 2014
     
-
+    properties
+       maxIters  = 1000; % max iterations for build
+       convIters =   20; % # of iters at a given cost
+                         % that
+       convEps =  0.001; % convergence epsilon
+       
+       useSubset = 1; 
+    end
+    
     properties ( SetAccess = private )
-       maxIters = 50; % quadratic program options
        pc;
     end
     
@@ -31,7 +38,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             this.pc.compXsectInverses();
         end
         
-        function [ patchParams, iteration ] = build3dPatch( this, iniPatch, patchMtx )
+        function [ patchParams, iteration, costs ] = build3dPatch( this, iniPatch, num2exclude )
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
             
@@ -41,7 +48,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             if( exist( 'iniPatch', 'var' ) && ~isempty( iniPatch ))
                 patchParams = iniPatch;    
             else
-                patchParams = randi( this.numDict, 1, 1 );
+                patchParams = randi( this.numDict, N, 1 );
             end
             
             converged = 0;           
@@ -50,34 +57,67 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             % randomly generate the patch location 
             % that will be updated at each iteration
             randomCoords = randi( N, this.maxIters, 1 );
-            b = this.pc.constraintValueList( patchMtx, patchParams );
-            % function b = constraintValueList( this, patchMtx, idxList )
-
+            b = this.pc.constraintValueList( this.D2d, patchParams );
+            costs = -1.*ones( this.maxIters, 1 );
+            
+            lastCost = inf;
+            itersAtThisCost = 0;
             
             while( ~converged )
                 
                 i = randomCoords( iteration );
-                j = this.pc.xsectList( i, : );
                 
-                bsub = this.pc.bSub();
+                if( this.useSubset )
+                    [bestidx, theseCosts] = this.bestPatchConfigSub( b, i );    
+                else
+                    [bestidx, theseCosts] = this.bestPatchConfig( b, i );
+                end
+                patchParams( i ) = bestidx;
                 
-                [bestidx, allSims] = this.bestPatchConfig( bsub, i, j );
+                costs(iteration) = theseCosts( bestidx );
                 
-                b = this.pc.updateConstraints( patchMtx, b, i, bestidx );
+                % has the cost changed much?
+                if( abs( costs(iteration) - lastCost  ) < this.convEps )
+                   itersAtThisCost = itersAtThisCost + 1;
+                else
+                    itersAtThisCost = 0;
+                end
+                lastCost = costs(iteration);
                 
-%                 cmtx  = this.pc.subCmtxAndInvs{i,1};
-%                 cmtxi = this.pc.subCmtxAndInvs{i,2};
-%                 x = cmtxi * b;
-%                 diff = norm( cmtx * x - b );
-                
-                iteration = iteration + 1;
-                
-                % force exit after max iteration count
-                if(iteration > this.maxIters)
+                % converged if we've been at the same cost for awhile
+                if( itersAtThisCost == this.convIters )
                     converged = 1;
                 end
+                
+                % force exit after max iteration count
+                if(iteration == this.maxIters)
+                    converged = 1;
+                else
+                    iteration = iteration + 1;
+                end
+                
+                b = this.pc.updateConstraints( this.D2d, b, i, bestidx );
+                
             end % iteration
+            
+            if( this.verbose )
+                fprintf('sampler - buildPatch3d converged after %d iterations\n', (iteration-1) );
+            end
+            
+            costs = costs(1:iteration-1);
+            patchParams = vecToRowCol( patchParams, 'col');
+            
+            patchParams = [ this.pc.dimXyzList, ...
+                            patchParams ];
+            
         end % build3dPatch
+        
+        function iniParams = iniParamsDist( this, N )
+            M = size(this.dimXyzList,1);
+            iniParams = mat2cell( ...
+                            randi(  this.numDict, N, M), ...
+                        ones( N, 1 ));
+        end
         
         function [ bestidx, sims, cmtx ] = bestPatchConfig( this, b, i )
             cmtx    = this.pc.cmtx;
