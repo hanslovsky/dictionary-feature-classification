@@ -60,6 +60,7 @@ D = [   patch1(:), patch2(:), patch3(:), patch4(:), patch5(:), patch6(:), patch7
 dsFactor = 3;
 patchSize = [ 9 9 ] ;
 
+% patch params for the bar example
 patchParams = [ 3 1  1; ... %set
                 3 4 12; ... %set
                 3 7 12; ... %set
@@ -70,6 +71,18 @@ patchParams = [ 3 1  1; ... %set
                 1 4 16; ... % questionable
                 1 7 12 ];   %
 
+            
+% % patch params for all zeros
+% patchParams = [ 3 1 12; ... 
+%                 3 4 12; ... 
+%                 3 7 12; ... 
+%                 2 1 12; ... 
+%                 2 4 12; ... 
+%                 2 7 12; ... 
+%                 1 1 12; ... 
+%                 1 4 12; ... 
+%                 1 7 12 ];   
+            
 patchParamsLeftOut = patchParams(2:end,:);
 
 %%
@@ -80,23 +93,33 @@ patchParamsLeftOut = patchParams(2:end,:);
 clear d23;
 d23 = Dict2dTo3d( D, patchSize(1), dsFactor );
 
-
 dim = patchParams( 1, 1);
 xyz = patchParams( 1, 2);
 idxTrue = patchParams( 1, 3);
 
 costs = d23.allPatchConfigCosts( dim, xyz, nodeTest );
+[mv, mi] = min( costs );
+
+%%
+
+[cost, cmtx, b1] = d23.patchConfigCost( 1, 3, 1, nodeTest );
 
 %%
 
 clear d23s;
 d23s = Dict2dTo3dSampler( D, patchSize(1), dsFactor );
 
-b = d23s.pc.constraintValueList( d23s.D2d, patchParams(:,1:2) );
+po = d23s.pc.reorderPatchParams( patchParams );
+
+b = d23s.pc.constraintValueList( d23s.D2d, po(:,3) );
+
+
 
 %%
 
-i = 1;
-[ bestidx, sims, cmtx2, b2] = d23s.bestPatchConfig( b, i );
+i = find(d23.locXyzDim2Idx( 3, 1 ))
+% [ bestidx, sims, cmtx2 ] = d23s.bestPatchConfig( b, i );
+[ bestidx, sims, cmtx2 ] = d23s.bestPatchConfigSub( b, i );
+bestidx
 
 
