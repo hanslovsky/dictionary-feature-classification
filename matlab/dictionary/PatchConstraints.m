@@ -5,6 +5,11 @@ classdef PatchConstraints < handle
         sz2d;
         sz3d;
         
+        numConstraints;
+        numLocs; 
+        
+        overlappingPatches;
+        
         pairLocRng;
         dimXyzList;
         xsectList;
@@ -20,9 +25,14 @@ classdef PatchConstraints < handle
     
     methods
         
-        function this = PatchConstraints( sz, f )
+        function this = PatchConstraints( sz, f, overlappingPatches )
         % Constructor
             this.f    = f;
+            if (~exist('overlappingPatches','var') || isempty(overlappingPatches))
+                this.overlappingPatches = 0;
+            else
+                this.overlappingPatches = overlappingPatches;
+            end
             
             if( length( sz ) > 2 )
                error('sz must be a 2-vector or scalar');
@@ -39,10 +49,17 @@ classdef PatchConstraints < handle
                 this.sz3d = [ sz sz sz ];
             end
             
-            this.pairLocRng = (1) : this.f : this.sz3d(1);
+            if(  this.overlappingPatches )
+                this.pairLocRng = (1) : this.sz3d(1)- this.f + 1;
+            else
+                this.pairLocRng = (1) : this.f : this.sz3d(1);
+            end
+            
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
+            this.numLocs = size( this.dimXyzList, 1 );
             
+            this.numConstraints = prod( this.sz2d ) *  this.numLocs;
             this.buildIntersectionList();
         end
         
@@ -153,7 +170,7 @@ classdef PatchConstraints < handle
             end
             
             cmtxIdxs = false( 1, size(locXyz,1));
-            binds    = false( 1, prod( this.sz3d) );
+            binds    = false( 1, this.numConstraints );
             for d = 1:N 
                 
                 if( ndim <= 1)
@@ -179,13 +196,37 @@ classdef PatchConstraints < handle
             % dimXyzList( xsectList,:) intersect with dimXyzList( i, :)
             
             numPatchLocs   = size( this.dimXyzList, 1 );
-            xsectList = false( numPatchLocs );
+            xsectList = logical(eye( numPatchLocs ));
             
             for i = 1:numPatchLocs
                 xsectList(i,:) = (this.dimXyzList(:,1) ~= this.dimXyzList(i,1));
             end
             
             this.xsectList = xsectList;
+        end
+        
+        function xsectList = buildIntersectionListOL( this )
+            
+            xsectList = logical(eye( this.numLocs ));
+            for i = 1:this.numLocs
+                for j = i+1:this.numLocs
+                    if( this.doOverlap( this.dimXyzList(i,:), this.dimXyzList(j,:)))
+                        xsectList(i,j) = true;
+                        xsectList(j,i) = true;
+                    end
+                end
+            end
+        end
+        
+        function areOverlapping = doOverlap( this, dimxyz1, dimxyz2 )
+        % dimxyz1 and dimxyz2 are 2-vectors where
+        % [dim xyz ]
+        % and dim is the dimension of the normal vector
+        % and xyz is the offset coordinate in that dimension
+        
+            areOverlapping = ( dimxyz1(1) ~= dimxyz2(1) || ...
+                               abs(dimxyz1(2) - dimxyz2(2)) < this.f );
+                             
         end
            
         function b = constraintValue( this, patchMtx, obj )

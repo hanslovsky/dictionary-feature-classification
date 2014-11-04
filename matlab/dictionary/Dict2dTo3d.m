@@ -49,6 +49,9 @@ classdef Dict2dTo3d < handle
         maxItersPerPatch = 5000;
         minDictElemDiff = 0.001;
         
+        % patch configuration options
+        overlappingPatches = 1;
+        
         verbose = 1;
     end
     

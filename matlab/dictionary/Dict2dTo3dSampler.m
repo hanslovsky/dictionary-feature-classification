@@ -10,12 +10,12 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
     % September 2014
     
     properties
-       maxIters  = 1000; % max iterations for build
-       convIters =   20; % # of iters at a given cost
-                         % that
-       convEps =  0.001; % convergence epsilon
+       maxIters  = 500; % max iterations for build
+       convIters =  20; % # of iters at a given cost ('flatness')
+                        % that indicate convergence
+       convEps =  0.001; % convergence epsilon (defines 'flatness')
        
-       useSubset = 1; 
+       useSubset = 0; 
     end
     
     properties ( SetAccess = private )
@@ -33,7 +33,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             % use a PatchConstraints object to compute
             % the constraint matrix once 
-            this.pc = PatchConstraints( sz, f );
+            this.pc = PatchConstraints( sz, f, this.overlappingPatches );
             this.pc.buildCmtx();
             this.pc.compXsectInverses();
         end
