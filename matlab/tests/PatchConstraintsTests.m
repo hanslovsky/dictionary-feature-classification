@@ -57,7 +57,7 @@ classdef PatchConstraintsTests < matlab.unittest.TestCase
         end
         
         function testCmtxConstraintsSubset( tc )
-            
+            a = 1;              
         end
         
     end

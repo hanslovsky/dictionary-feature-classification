@@ -70,7 +70,6 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 %                 x = cmtxi * b;
 %                 diff = norm( cmtx * x - b );
                 
-                
                 iteration = iteration + 1;
                 
                 % force exit after max iteration count
@@ -80,7 +79,29 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end % iteration
         end % build3dPatch
         
-        function [ bestidx, sims, cmtx, bsub ] = bestPatchConfig( this, b, i )
+        function [ bestidx, sims, cmtx ] = bestPatchConfig( this, b, i )
+            cmtx    = this.pc.cmtx;
+            cmtxInv = this.pc.cmtxInv;
+            
+            % initialize experimental constraint values
+            bexp = b;
+            
+            % the range of constraint values that will change
+            % depending on the patch being tested
+            brng = this.pc.constraintVecSubsets(i,:);
+            
+            sims = zeros( this.numDict, 1 );
+            for n = 1:this.numDict
+                bexp( brng ) = this.D2d(n,:);
+                
+                x = cmtxInv * bexp;
+                sims( n ) = norm( cmtx * x - bexp );
+            end
+            
+            [ ~, bestidx ] = min( sims );
+        end
+        
+        function [ bestidx, sims, cmtx, btot ] = bestPatchConfigSub( this, b, i )
         %  [bestidx, sims] = bestPatchConfig( this, b, i )
         %   b - vector of all constraint values
         
@@ -93,8 +114,12 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             sims = zeros( this.numDict, 1 );
             for n = 1:this.numDict
                
-                x = cmtxi * bsub;
-                sims( n ) = norm( cmtx * x - bsub );
+                % change bsub depending on which patch is being tested
+                btot = [ this.D2d(n,:)'; ... 
+                         bsub ];
+                 
+                x = cmtxi * btot;
+                sims( n ) = norm( cmtx * x - btot );
                 
             end
             [ ~, bestidx ] = min( sims );
