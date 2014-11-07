@@ -64,8 +64,12 @@ classdef PatchConstraints < handle
         end
         
         function idx = locXyzDim2Idx( this, dim, xyz )
-            idx = ( this.dimXyzList(:,1) == dim & ...
-                    this.dimXyzList(:,2) == xyz );
+            num = length( dim );
+            idx = zeros( num, 1 );
+            for i = 1:num
+                idx(i) = find( this.dimXyzList(:,1) == dim(i) & ...
+                               this.dimXyzList(:,2) == xyz(i) );
+            end
         end
         
         function [dim,xyz] = locIdx2XyzDim( this, idx )
@@ -78,14 +82,14 @@ classdef PatchConstraints < handle
             numVariables = prod( this.sz3d );
             
             numPatchLocs   = size( this.dimXyzList, 1 );
-            numConstraints = numPatchLocs * patchNumElem;
             
-            this.cmtx = zeros( numConstraints, numVariables );
-            this.locToConstraint = false( numPatchLocs, numConstraints );
-            this.constraintVecSubsets = false( numPatchLocs, numConstraints );
+            this.cmtx = zeros( this.numConstraints, numVariables );
+            this.locToConstraint = false( numPatchLocs, this.numConstraints );
+            this.constraintVecSubsets = false( numPatchLocs, this.numConstraints );
             
             k = 1;
             for i = 1 : numPatchLocs
+                
                 thisdim = this.dimXyzList(i,1);
                 thisxyz = this.dimXyzList(i,2);
                 
@@ -258,9 +262,13 @@ classdef PatchConstraints < handle
                 
                 i = find( patchParams(:,1) == dim &  ...
                           patchParams(:,2) == xyz );
+                if( isempty( i ))
+                    continue;
+                end
+                    
                 rowPermutation(r) = i;
             end
-            
+            rowPermutation = rowPermutation(rowPermutation~=0);
             paramsOut = patchParams( rowPermutation, : );
             
         end

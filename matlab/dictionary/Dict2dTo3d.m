@@ -12,12 +12,15 @@ classdef Dict2dTo3d < handle
 
         obj_fn;   % the file where this object is stored
         
+        pc;       % PatchConstraints object
+        
         D2d;      % The dictionary elements
         numDict;  % Number of 2d dictionary elements
         sums2d;   % the dictionary element sums
         
         D3d;        % the 3d dictionary
         numDict3d;  % number of 3d dictionary elements
+        
         
         
         sz2d;     % the size of 2d patches
@@ -52,13 +55,18 @@ classdef Dict2dTo3d < handle
         % patch configuration options
         overlappingPatches = 1;
         
+        % initialization options
+        Dini;     % dictionary or observations optionally used for initialization
+        iniLocs;  % patch locations that are initialized
+        numIniPatches; 
+        
         verbose = 1;
     end
     
     methods
         
 
-        function this = Dict2dTo3d( D2d, sz, f )
+        function this = Dict2dTo3d( D2d, sz, f, overlappingPatches )
         % Constructor
         % D2d - 
         % sz  - size of 2d patches
@@ -99,12 +107,28 @@ classdef Dict2dTo3d < handle
 %             this.pairLocRng = (1+half) : this.f : this.sz3d(1);
             this.pairLocRng = (1) : this.f : this.sz3d(1);
             
-            
+            % TODO - remove these eventually since the functionallity
+            % is now the in the pc object
             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
             this.dimXyzList = [ dList(:), xyzList(:) ];
             
-%             this.allSims = this.allSimilaritiesFast();
+            if( exist('overlappingPatches','var'))
+                this.overlappingPatches = overlappingPatches;
+            end
+            
+            % use a PatchConstraints object to compute
+            % the constraint matrix once
+            this.pc = PatchConstraints( sz, f, this.overlappingPatches );
+            
+            fprintf('Computing constraint matrix inverse...');
+            this.pc.buildCmtx();
+            fprintf('.done\n');
 
+            this.buildIniLocs();
+        end
+        
+        function buildIniLocs( this )
+            this.iniLocs = find(this.pc.dimXyzList( :, 1 ) == 3);
         end
         
         function obj = copy(this)
@@ -246,18 +270,22 @@ classdef Dict2dTo3d < handle
             patch = [];
         end
     
-        function [ patches3d, f_out ] = build3dDictionaryDist( this, dict3dSize, pe_batch_size, iniout )
+        function [ patches3d, f_out ] = build3dDictionaryDist( this, dict3dSize, pe_batch_size, inioutmethod )
             global DICTPATH;
 
-            this.save();
-            
             if( ~exist( 'pe_batch_size', 'var' ) || isempty( pe_batch_size ))
-                pe_batch_size = 10;
+                pe_batch_size = 1;
             end
             
-            if( ~exist( 'iniout', 'var' ) || isempty( iniout ))
-                iniout = 0;
+            if( ~exist( 'inioutmethod', 'var' ) || isempty( inioutmethod ))
+                inioutmethod = '';
             end
+            
+%             if( strcmp(inioutmethod, 'dict') )
+%                 buildName = 'build3dPatchIni';
+%             else
+                buildName = 'build3dPatch';
+%             end
             
             % params
             this.numDict3d = dict3dSize;
@@ -276,14 +304,21 @@ classdef Dict2dTo3d < handle
 
             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
                           repmat( {'this'}, dict3dSize-n, 1), ...
-                          repmat( {'build3dPatch'}, dict3dSize-n, 1), ...
+                          repmat( {buildName}, dict3dSize-n, 1), ...
                           repmat( {num_out_args}, dict3dSize-n, 1), ...
                        };
                       
-            if( iniout )
-                iniParams = this.iniParamsDist( dict3dSize )
+            if( inioutmethod )
+                iniParams = this.iniParamsDist( dict3dSize, inioutmethod );
                 varargin{5} = iniParams;
+                
+                if( strcmp(inioutmethod, 'dict') )
+                    varargin{6} = {this.iniLocs};
+                end
+                varargin
             end
+            
+            this.save();
             
             iter = 1;
             while( n < dict3dSize )
@@ -323,16 +358,29 @@ classdef Dict2dTo3d < handle
             this.D3d = patches3d;
         end
         
-        function [ patches3d ] = build3dDictionary( this, dict3dSize )
+        function [ patches3d ] = build3dDictionary( this, dict3dSize, inioutmethod )
             this.numDict3d = dict3dSize;
             
+            haveinis = 0;
+            if( exist( 'inioutmethod', 'var' ) && ~isempty( inioutmethod ) )
+                iniParams = this.iniParamsDist( dict3dSize, inioutmethod );
+                haveinis = 1;
+            end
+            
             n = 0;
+            i = 1;
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
             while( n < this.numDict3d )
                 if( this.verbose )
                     fprintf('building 3d dictionary element %d\n', n);
                 end
-                patchParams = this.build3dPatch();
+                if( haveinis )
+                    patchParams = this.build3dPatch( iniParams{i} );
+                    i = i + 1;
+                else
+                    patchParams = this.build3dPatch();
+                end
+                
                 pv = this.patchFromParams( patchParams );
                 pv = vecToRowCol( pv, 'row' );
                 
@@ -1017,10 +1065,16 @@ classdef Dict2dTo3d < handle
     end
     
     methods ( Access = protected )
-        function numAdded = addTemporaryPatchesToDict( this, tempPatches )
+        function numAdded = addTemporaryPatchesToDict( this, tempPatches, updateNumDict )
+            if( ~exist('updateNumDict','var') || isempty(updateNumDict))
+                updateNumDict = 0;
+            end
+            
             numAdded = size( tempPatches, 1 );
             this.D2d = [ this.D2d; tempPatches ];
-            this.numDict = size( this.D2d, 1 );
+            if( updateNumDict )
+                this.numDict = size( this.D2d, 1 );
+            end
         end
         
         function removeTemporaryPatches( this, numToRemove )
@@ -1059,7 +1113,6 @@ classdef Dict2dTo3d < handle
 
         end
 
-        
         function initialConstraintNode = build3dPatchSetup( this, xyzn )
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
@@ -1329,11 +1382,11 @@ classdef Dict2dTo3d < handle
            intersection = m( m > 0 );
         end
         
+        function simMtx = allSimilaritiesSums( X, sz ) 
         % X must be (N x M)
         % where N is the number of patches and
         % M is prod( sz )
         % and sz is a vector describing the patch size
-        function simMtx = allSimilaritiesSums( X, sz ) 
             [N,M] = size( X );
             if( prod(sz) ~= M )
                 error('size inconsistent with patch matrix X')
