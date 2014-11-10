@@ -4,7 +4,7 @@
 % dbstop if error; run_script('simBuild3dDictFrom2d', 'test bubble data, N=1m, K=500, f=3');
 % dbstop if error; run_script('simBuild3dDictFrom2d', 'test bubble data, N=1m, K=500, f=5');
 %
-% dbstop if error; run_script('simBuild3dDictFrom2d', 'test bubble data, N=1m, K=500, f=3, D3dini');
+% dbstop if error; run_script('simBuild3dDictFrom2d', 'test bubble data, N=1m, K=500, f=3, noOL, D3dini, cleaned 2d dict');
 % dbstop if error; run_script('simBuild3dDictFrom2d', 'test bubble data, N=1m, K=500, f=5, D3dini');
 
 global SAVEPATH
@@ -19,13 +19,13 @@ test_fn  = fullfile( srcdir, 'Bubbles_r3_b1_snr10_2.tif');
 %% params
 
 N = 1000000;
-% dsFactor = 3;
-% patchSize = [9 9 dsFactor];
-% patchSize3d = [9 9 9];
+dsFactor = 3;
+patchSize = [9 9 dsFactor];
+patchSize3d = [9 9 9];
 
-dsFactor = 5;
-patchSize = [15 15 dsFactor];
-patchSize3d = [15 15 15];
+% dsFactor = 5;
+% patchSize = [15 15 dsFactor];
+% patchSize3d = [15 15 15];
 
 % dictionary building parameters
 param.K = 500;  % dictionary size
@@ -36,22 +36,22 @@ param.iter = 500;  % num iterations.
 
 dictSize3d = 200;
 minD3dDiff = -1;
-overlappingPatches = 1;
+overlappingPatches = 0;
 pe_batch = 1;
 
 % Dfile = [];
 
 % 9x9 dict
-% Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0172_simBuild3dDictFrom2d/exp0172_dict2d.mat';
+Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0172_simBuild3dDictFrom2d/exp0172_dict2d.mat';
 
 % 15x15 dict
-Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0174_simBuild3dDictFrom2d/exp0174_dict2d.mat';
+% Dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0174_simBuild3dDictFrom2d/exp0174_dict2d.mat';
 
 
-D3dfile = [];
+% D3dfile = [];
 
 % 9x9x3 dict
-% D3dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0176_simBuild3dDictFrom2d/exp0176_dict3d.mat';
+D3dfile = '/groups/saalfeld/home/bogovicj/reseach/exp/saved_exp/exp0176_simBuild3dDictFrom2d/exp0176_dict3d.mat';
 
 
 
@@ -136,6 +136,9 @@ end
 %% build 3d
 
 d23 = Dict2dTo3dSampler( D2d', patchSize(1), dsFactor, overlappingPatches );
+d23
+d23.pc
+
 d23.minDictElemDiff = minD3dDiff;
 if( strcmp( iniOpts, 'dict' ))
     d23.Dini = D3d';

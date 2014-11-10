@@ -56,8 +56,20 @@ classdef PatchConstraintsTests < matlab.unittest.TestCase
             end  
         end
         
-        function testCmtxConstraintsSubset( tc )
-            a = 1;              
+        function testConstraintValues( tc )
+            pc = tc.pc9;
+            N = 25;
+            ncpp = prod( pc.sz2d );
+            D = rand( N, ncpp);
+            
+            idxList = randi( N, pc.numLocs, 1);
+            idxNode = Dict2dTo3d.patchParamArrayToNode( [ pc.dimXyzList idxList ]);
+            
+            bl = pc.constraintValueList( D, idxList );
+            bn = pc.constraintValueNode( D, idxNode );
+            
+            tc.assertEqual( bl, bn );
+            
         end
         
     end

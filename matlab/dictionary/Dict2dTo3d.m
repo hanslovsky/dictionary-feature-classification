@@ -20,7 +20,7 @@ classdef Dict2dTo3d < handle
         
         D3d;        % the 3d dictionary
         numDict3d;  % number of 3d dictionary elements
-        
+        paramList;  % the parameters that gave rise to the 3d dict
         
         
         sz2d;     % the size of 2d patches
@@ -54,6 +54,7 @@ classdef Dict2dTo3d < handle
         
         % patch configuration options
         overlappingPatches = 1;
+        saveParams = 1;
         
         % initialization options
         Dini;     % dictionary or observations optionally used for initialization
@@ -115,6 +116,9 @@ classdef Dict2dTo3d < handle
             if( exist('overlappingPatches','var'))
                 this.overlappingPatches = overlappingPatches;
             end
+            
+            % remove low variance (ie uninteresting) dictionary
+            this.cleanDict2d();
             
             % use a PatchConstraints object to compute
             % the constraint matrix once
@@ -189,6 +193,33 @@ classdef Dict2dTo3d < handle
             if( ~exist( obj_fn, 'file'))
                 save( this.obj_fn, 'this' ); 
             end
+        end
+        
+        function numRemoved = cleanDict2d( this, minVar )
+            if( this.verbose)
+               fprintf('Cleaning 2d dict\n'); 
+            end
+            
+            if( ~exist( 'minVar','var') || isempty( minVar ))
+                minVar = 0.005;
+            end
+            vlist = zeros( this.numDict, 1);
+            for i = 1:this.numDict
+                vlist(i) = var( this.D2d(i,:));
+            end
+            
+            goodDictElems = ( vlist > minVar );
+            this.D2d = this.D2d( goodDictElems, : );
+            
+            newSize = nnz( goodDictElems );
+            numRemoved = this.numDict - newSize;
+            this.numDict = newSize;
+        end
+        
+        function trimDict2d( this )
+        % removes "extra" elements from the 2d dictionary
+        % that might arise from initializations
+            this.D2d = this.D2d( 1:this.numDict, : );
         end
         
         function patch = sample2dTo3d( this )
@@ -287,6 +318,8 @@ classdef Dict2dTo3d < handle
                 buildName = 'build3dPatch';
 %             end
             
+
+            
             % params
             this.numDict3d = dict3dSize;
             fun = @run_obj_method_dist;
@@ -297,7 +330,7 @@ classdef Dict2dTo3d < handle
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
             
             % the cell array of parameters
-            num_out_args = 3; % build3dPatch has 2 output args
+            num_out_args = 3; % build3dPatch has 3 output args
             
 %             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
 %                           {'this'}, {'build3dPatch'}, {num_out_args} };
@@ -319,6 +352,11 @@ classdef Dict2dTo3d < handle
             end
             
             this.save();
+            
+            % optionally save the parameters along with the final recon patch
+            if( this.saveParams )
+                this.paramList = cell( dict3dSize, 1);
+            end
             
             iter = 1;
             while( n < dict3dSize )
@@ -348,6 +386,10 @@ classdef Dict2dTo3d < handle
                         end
                         
                         n = n + 1;
+                        if( this.saveParams )
+                            this.paramList{n} = patchParams;
+                        end
+                        
                         patches3d(n,:) = pv;
                         
                     end
@@ -441,8 +483,37 @@ classdef Dict2dTo3d < handle
             this.remFromAllSims( numAdded );
             
         end
-         
-        function [ pv, patch, cmtx, b ] = patchFromParams( this, splNode )
+
+        function [ pv, patch, cmtx, b ] = patchFromParams( this, splNode)
+            if( ~isempty(this.pc))
+                [ pv, patch, cmtx, b ] = patchFromParamsPre( this, splNode);
+            else
+                [ pv, patch, cmtx, b ] = patchFromParamsComp( this, splNode);
+            end
+        end
+        
+        function [ pv, patch, cmtxi, b ] = patchFromParamsPre( this, splNode)
+        % Compute patch from parameters using a precomputed constraint
+        % matrix from the PatchConstraints object
+            
+            % fprintf('patch from precomputed constraints\n');
+            if( isempty( splNode ))
+                patch = [];
+                pv = [];
+                return;
+            end
+
+            cmtxi = this.pc.cmtxInv;
+            b     = this.pc.constraintValue( this.D2d, splNode );
+
+            pv = cmtxi * b;
+            if( nargout > 1 )
+                patch = reshape( pv, this.sz3d );
+            end
+            
+        end
+
+        function [ pv, patch, cmtx, b ] = patchFromParamsComp( this, splNode )
         % splNode must be a sortedTreeNode< SubPatch2dLocation >   
             if( isempty( splNode ))
                 patch = [];

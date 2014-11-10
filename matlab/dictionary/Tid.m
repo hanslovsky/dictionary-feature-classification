@@ -269,6 +269,15 @@ classdef Tid < handle
 
         end
         
+        
+        function s2rFun = patchSlicesToRows3d()
+            s2rFun = @(X)( reshape(X, [], size(X,3) )');
+        end
+        
+        function r2sFun = patchRowsToSlices3d()
+            r2sFun = @(X, sz2d)( reshape(X', [sz2d size(X,1)]));
+        end
+        
         function downsampler = getDownsampler2dx()
             downsampler = @(X,f)(reshape(mean(reshape( X', f, [] )), size(X')./[f 1]))';
         end
@@ -298,7 +307,7 @@ classdef Tid < handle
         end
         
         function downsampler = getDownsampler3dz()
-            downsampler = @(X,f)(permute(reshape(mean(reshape( permute(x, [3 2 1]), f, [] )), sz([3 2 1])./[f 1 1]), [3 2 1]));
+            downsampler = @(X,sz,f)(permute(reshape(mean(reshape( permute(X, [3 2 1]), f, [] )), sz([3 2 1])./[f 1 1]), [3 2 1]));
         end
         
         function downsamplerRs = getDownsampler3dzRs()

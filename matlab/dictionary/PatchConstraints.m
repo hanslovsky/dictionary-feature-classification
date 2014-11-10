@@ -242,8 +242,25 @@ classdef PatchConstraints < handle
         end
         
         function b = constraintValueNode( this, patchMtx, node )
-            b = [];
-            error('not yet implemented');
+            
+            patchNumElem = prod( this.sz2d ); % num constraints per patch
+            depth = node.getDepth();
+            b = zeros( patchNumElem * (depth+1), 1 );
+             
+            for i = 0:depth
+
+                dat = node.getData();
+                j = this.locXyzDim2Idx( dat.dim, dat.xyz );
+                idx = dat.idx;
+
+                start = patchNumElem * (j - 1) + 1;
+                rng = start : start + patchNumElem - 1;
+
+                b( rng ) = patchMtx( idx, : );
+
+                node = node.getParent();
+            end
+             
         end
         
         function [paramsOut, rowPermutation] = reorderPatchParams( this, patchParams )
@@ -294,11 +311,21 @@ classdef PatchConstraints < handle
             brng = 1:patchNumElem;
             for i = 1:N
                 if( ndim <= 1)
+                    % if idxList is a column vector, assume that
+                    % the indices are given in the same order as 
+                    % this.dimXyzList
                     idx =  idxList( i );
-                elseif( size( idxList, 2) == 2 )
-                    idx = this.locXyzDim2Idx(   idxList(i,1), ...
-                                                idxList(i,2));
+                elseif( size( idxList, 2) == 3 )
+                    j = this.locXyzDim2Idx( idxList(i,1), ...
+                                            idxList(i,2));
+                                        
+                    idx = idxList( i, 3 );
+                    
+                    start = patchNumElem * (j - 1) + 1;
+                	brng = start : start + patchNumElem - 1;
+                    
                 end
+                
                 b(brng) = patchMtx( idx, : );
                 brng = brng + patchNumElem;
             end
