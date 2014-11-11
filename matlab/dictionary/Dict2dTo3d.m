@@ -1421,9 +1421,13 @@ classdef Dict2dTo3d < handle
             else
                 rng = val : val + f - 1;
             end
+            
+            valid = (rng>0) & (rng<=sz(1));
+            rng = rng( valid );
+
             N = prod(sz(1:2));
             
-            v = repmat( reshape(1:N, sz(1:2)), [1 1 f]);
+            v = repmat( reshape(1:N, sz(1:2)), [1 1 nnz(valid)]);
             
             switch n
                 case 1
