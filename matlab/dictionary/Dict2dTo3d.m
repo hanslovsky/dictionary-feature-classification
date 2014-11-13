@@ -21,7 +21,7 @@ classdef Dict2dTo3d < handle
         D3d;        % the 3d dictionary
         numDict3d;  % number of 3d dictionary elements
         paramList;  % the parameters that gave rise to the 3d dict
-        
+        costList;   % the costs of each patch
         
         sz2d;     % the size of 2d patches
         sz3d;     % the size of 3d patches
@@ -51,10 +51,12 @@ classdef Dict2dTo3d < handle
         Nbest = 5;
         maxItersPerPatch = 5000;
         minDictElemDiff = 0.001;
+        maxDictCost     = -1;
         
         % patch configuration options
         overlappingPatches = 1;
         saveParams = 1;
+        saveCosts = 1;
         
         % initialization options
         Dini;     % dictionary or observations optionally used for initialization
@@ -65,7 +67,6 @@ classdef Dict2dTo3d < handle
     end
     
     methods
-        
 
         function this = Dict2dTo3d( D2d, sz, f, overlappingPatches )
         % Constructor
@@ -110,8 +111,8 @@ classdef Dict2dTo3d < handle
             
             % TODO - remove these eventually since the functionallity
             % is now the in the pc object
-            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
-            this.dimXyzList = [ dList(:), xyzList(:) ];
+%             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+%             this.dimXyzList = [ dList(:), xyzList(:) ];
             
             if( exist('overlappingPatches','var'))
                 this.overlappingPatches = overlappingPatches;
@@ -128,11 +129,7 @@ classdef Dict2dTo3d < handle
             this.pc.buildCmtx();
             fprintf('.done\n');
 
-            this.buildIniLocs();
-        end
-        
-        function buildIniLocs( this )
-            this.iniLocs = find(this.pc.dimXyzList( :, 1 ) == 3);
+            %this.buildIniLocs();
         end
         
         function obj = copy(this)
@@ -318,8 +315,6 @@ classdef Dict2dTo3d < handle
                 buildName = 'build3dPatch';
 %             end
             
-
-            
             % params
             this.numDict3d = dict3dSize;
             fun = @run_obj_method_dist;
@@ -330,7 +325,7 @@ classdef Dict2dTo3d < handle
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
             
             % the cell array of parameters
-            num_out_args = 3; % build3dPatch has 3 output args
+            num_out_args = 4; % build3dPatch has 4 output args
             
 %             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
 %                           {'this'}, {'build3dPatch'}, {num_out_args} };
@@ -348,13 +343,15 @@ classdef Dict2dTo3d < handle
                 if( strcmp(inioutmethod, 'dict') )
                     varargin{6} = {this.iniLocs};
                 end
-                varargin
             end
             
             this.save();
             
             % optionally save the parameters along with the final recon patch
             if( this.saveParams )
+                this.paramList = cell( dict3dSize, 1);
+            end
+            if( this.saveCosts )
                 this.paramList = cell( dict3dSize, 1);
             end
             
@@ -374,7 +371,9 @@ classdef Dict2dTo3d < handle
                 for i = 1:size(f_out,1)
                     
                     patchParams = f_out{i}{1}{1};
-                    pv = this.patchFromParams( patchParams );
+                    pv          = f_out{i}{1}{2};
+                    
+                    % pv = this.patchFromParams( patchParams );
                     pv = vecToRowCol( pv, 'row' );
                     
                     if( ~isempty( pv ))
@@ -388,6 +387,9 @@ classdef Dict2dTo3d < handle
                         n = n + 1;
                         if( this.saveParams )
                             this.paramList{n} = patchParams;
+                        end
+                        if( this.saveCosts )
+                            this.costList{n} = f_out{i}{1}{4};
                         end
                         
                         patches3d(n,:) = pv;
@@ -504,7 +506,7 @@ classdef Dict2dTo3d < handle
             end
 
             cmtxi = this.pc.cmtxInv;
-            b     = this.pc.constraintValue( this.D2d, splNode );
+            b     = this.constraintValue( splNode );
 
             pv = cmtxi * b;
             if( nargout > 1 )
@@ -615,7 +617,8 @@ classdef Dict2dTo3d < handle
             isgood = 1;
         end
 
-        function [patchParams,iteration,costs] = build3dPatch( this, iniPatchFill, num2exclude )
+        function [patchParams, pv, iteration, costs] = build3dPatch( ...
+                        this, iniPatchFill, num2exclude )
             
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
@@ -724,6 +727,8 @@ classdef Dict2dTo3d < handle
                 end
                 iteration = iteration + 1;
             end
+            
+            [pv] = this.patchFromParams( patchParams );
         end
          
         function costs = computeCandidateCosts( this, xyz, dim, config )
@@ -1133,6 +1138,13 @@ classdef Dict2dTo3d < handle
             
         end
         
+        function b = constraintValue( this, obj )
+            if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
+                b = this.pc.constraintValueNode( this.D2d, obj );
+            else
+                b = this.pc.constraintValueList( this.D2d, obj );
+            end
+        end
     end
     
     methods ( Access = protected )
@@ -1205,9 +1217,9 @@ classdef Dict2dTo3d < handle
     
     methods( Static )
         
+        function slc = slice( patch, i, isRow )
         % isRow - if true, sample ith row, 
         %         else sample ith column
-        function slc = slice( patch, i, isRow )
             if( isRow )
                 slc = patch(i,:);
             else
@@ -1215,9 +1227,9 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        function slc = slicePadded( patch, i, pad, isRow )
         % isRow - if true, sample ith row, 
         %         else sample ith column
-        function slc = slicePadded( patch, i, pad, isRow )
             if( isRow )
                 slc = patch(i-pad:i+pad,:);
             else
@@ -1225,8 +1237,8 @@ classdef Dict2dTo3d < handle
             end
         end
         
-        % downsample vector 
         function ds = downsampleVec( vec, f )
+        % downsample vector 
             ds = vecToRowCol( vec, 'row' );
             ds = mean(reshape( ds, f, [] ));
         end
@@ -1308,7 +1320,6 @@ classdef Dict2dTo3d < handle
             end
         end
         
-        % 
         function intersection = findIntersections( msk, v )
             j = setdiff( 1:3, v(1));
             m = msk( j, : );

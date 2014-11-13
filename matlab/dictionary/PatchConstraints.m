@@ -1,28 +1,31 @@
 classdef PatchConstraints < handle
     
-    properties 
+    properties ( SetAccess = protected )
         f;  % downsampling factor
         sz2d;
         sz3d;
         
         numConstraints;
-        numLocs; 
-        
-        overlappingPatches;
+        numLocs;
         
         pairLocRng;
         dimXyzList;
         xsectList;
         
-        cmtx;     % the constraint matrix 
+        cmtx;     % the constraint matrix
         cmtxInv;  % pseudo-inverse of the constraint matrix
         locToConstraint;
         
         subCmtxAndInvs;
-        constraintVecXsectSubsets; % 
-        constraintVecSubsets; % 
+        constraintVecXsectSubsets; %
+        constraintVecSubsets; %
     end
     
+    properties
+        overlappingPatches;
+        overlappingFull = 1;
+    end
+   
     methods
         
         function this = PatchConstraints( sz, f, overlappingPatches )
@@ -50,7 +53,11 @@ classdef PatchConstraints < handle
             end
             
             if(  this.overlappingPatches )
-                this.pairLocRng = (1) : this.sz3d(1)- this.f + 1;
+                if( this.overlappingFull )
+                    this.pairLocRng = (-this.f + 1) : this.sz3d(1);
+                else
+                    this.pairLocRng = (1) : this.sz3d(1)- this.f + 1;
+                end
             else
                 this.pairLocRng = (1) : this.f : this.sz3d(1);
             end
