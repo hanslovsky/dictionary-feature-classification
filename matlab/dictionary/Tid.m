@@ -269,7 +269,20 @@ classdef Tid < handle
 
         end
         
-        
+        function [xi,yi,zi] = repz( sz, f, isvec )
+            if( ~exist('isvec', 'var') || isempty( isvec ))
+                isvec = 0;
+            end
+            zr = repmat(1:sz(3),f,1);
+            [xi,yi,zi] = ndgrid( 1:sz(1), 1:sz(2), zr(:));
+            if( isvec )
+                xi = sub2ind( sz, xi, yi, zi );
+                xi = xi(:);
+                clear yi zi;
+            end
+            
+        end
+            
         function s2rFun = patchSlicesToRows3d()
             s2rFun = @(X)( reshape(X, [], size(X,3) )');
         end

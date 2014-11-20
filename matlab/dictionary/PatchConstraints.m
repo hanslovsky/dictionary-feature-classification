@@ -19,6 +19,9 @@ classdef PatchConstraints < handle
         subCmtxAndInvs;
         constraintVecXsectSubsets; %
         constraintVecSubsets; %
+        
+        overlapFraction;    % fraction of this location that
+                            % overlaps with field-of-view
     end
     
     properties
@@ -54,7 +57,7 @@ classdef PatchConstraints < handle
             
             if(  this.overlappingPatches )
                 if( this.overlappingFull )
-                    this.pairLocRng = (-this.f + 1) : this.sz3d(1);
+                    this.pairLocRng = (-this.f + 2) : this.sz3d(1);
                 else
                     this.pairLocRng = (1) : this.sz3d(1)- this.f + 1;
                 end
@@ -338,7 +341,7 @@ classdef PatchConstraints < handle
             end
         end
         
-        function bnew = updateConstraints( this, patchMtx, b, j, idx )
+        function bnew = updateConstraints( this, patchMtx, b, jList, idx )
         % bnew = updateConstraints( this, patchMtx, b, j, idx )
         %   patchMtx - N x M matrix where N is number of dictionary elements
         %   b        - current b vector
@@ -346,10 +349,14 @@ classdef PatchConstraints < handle
         %   idx      - index into patchMtx of replacing patch
             bnew = b;
             patchNumElem = prod( this.sz2d );
-            start = patchNumElem * (j - 1) + 1;
-            rng = start : start + patchNumElem - 1;
             
-            bnew( rng ) = patchMtx( idx, : );
+            for i = 1:length(jList)
+                j = jList( i );
+                start = patchNumElem * (j - 1) + 1;
+                rng = start : start + patchNumElem - 1;
+            
+                bnew( rng ) = patchMtx( idx(i), : );
+            end
         end
         
     end

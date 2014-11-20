@@ -119,7 +119,7 @@ classdef Dict2dTo3d < handle
             end
             
             % remove low variance (ie uninteresting) dictionary
-            this.cleanDict2d();
+%             this.cleanDict2d();
             
             % use a PatchConstraints object to compute
             % the constraint matrix once
@@ -132,6 +132,10 @@ classdef Dict2dTo3d < handle
             %this.buildIniLocs();
         end
         
+        function setD3d( this, dict3d )
+            this.D3d = dict3d;
+        end
+       
         function obj = copy(this)
             obj = Dict2dTo3d( this.D2d, this.sz2d(1), this.f );
             obj.sz3d = this.sz3d;
@@ -301,6 +305,7 @@ classdef Dict2dTo3d < handle
         function [ patches3d, f_out ] = build3dDictionaryDist( this, dict3dSize, pe_batch_size, inioutmethod )
             global DICTPATH;
 
+            f_out = [];
             if( ~exist( 'pe_batch_size', 'var' ) || isempty( pe_batch_size ))
                 pe_batch_size = 1;
             end
@@ -325,11 +330,12 @@ classdef Dict2dTo3d < handle
             patches3d = zeros( dict3dSize, prod( this.sz3d ));
             
             % the cell array of parameters
-            num_out_args = 4; % build3dPatch has 4 output args
+            num_out_args = 6; % build3dPatch has 4 output args
             
 %             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
 %                           {'this'}, {'build3dPatch'}, {num_out_args} };
-
+            this.save();
+            
             varargin = {  repmat( {this.obj_fn}, dict3dSize-n, 1), ...
                           repmat( {'this'}, dict3dSize-n, 1), ...
                           repmat( {buildName}, dict3dSize-n, 1), ...
@@ -344,8 +350,6 @@ classdef Dict2dTo3d < handle
                     varargin{6} = {this.iniLocs};
                 end
             end
-            
-            this.save();
             
             % optionally save the parameters along with the final recon patch
             if( this.saveParams )
@@ -368,6 +372,7 @@ classdef Dict2dTo3d < handle
                             [], [], run_script, ...
                             varargin{:} );
                 
+                goodToGo = true( size(f_out,1), 1 );
                 for i = 1:size(f_out,1)
                     
                     patchParams = f_out{i}{1}{1};
@@ -380,6 +385,7 @@ classdef Dict2dTo3d < handle
                         if( n > 0 && this.minDictElemDiff > 0 )
                             mindiff = min(pdist2( pv, patches3d(1:n,:)));
                             if( mindiff < this.minDictElemDiff )
+                                goodToGo(i) = false;
                                 continue;
                             end
                         end
@@ -396,10 +402,18 @@ classdef Dict2dTo3d < handle
                         
                     end
                 end
+                
+                this.saveSupplemental( f_out(goodToGo) );
+                
                 iter = iter + 1;
             end
             
             this.D3d = patches3d;
+        end
+        
+        function saveSupplemental( this, f_out )
+            % do nothing, 
+            % but subclasses may use.
         end
         
         function [ patches3d ] = build3dDictionary( this, dict3dSize, inioutmethod )
@@ -617,11 +631,14 @@ classdef Dict2dTo3d < handle
             isgood = 1;
         end
 
-        function [patchParams, pv, iteration, costs] = build3dPatch( ...
+        function [patchParams, pv, iteration, costs, paramsByIter, otherParams] = build3dPatch( ...
                         this, iniPatchFill, num2exclude )
             
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
+            
+            paramsByIter = {};
+            otherParams  = {};
             
             if( ~exist('num2exclude','var') || isempty(num2exclude))
                 num2exclude = 0;

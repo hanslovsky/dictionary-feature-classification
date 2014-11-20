@@ -16,15 +16,21 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
        convEps =  0.001; % convergence epsilon (defines 'flatness')
        
        chooseBestAtIter = 0;
+       alwaysNormD3d    = 0;
        useSubset = 0; 
        
        intXfmModelType = '';
        paramModels;
+       stopAfterFitParamIni = 1;
        
        scaleDictElems = 0;
        paramScales;
        
        recordParamsOverIters = 0;
+       savedParams;
+
+%        updateOrder = 'all';
+       updateOrder = 'each';
        
     end
     
@@ -122,8 +128,9 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
         end 
         
-        function [ patchParams, pv, iteration, costs ] = build3dPatch( this, iniPatch, excludeParam )
-        % [ patchParams, iteration, costs ] = build3dPatch( this, iniPatch, exclude )
+        function [ patchParams, pv, iteration, costs, patchesByIter, otherParams ] = ...
+                        build3dPatch( this, iniPatch, excludeParam, record )
+        % [ patchParams, iteration, costs ] = build3dPatch( this, iniPatch, excludeParam, record )
         %
         % Inputs:
         %   this    : this object
@@ -131,9 +138,22 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
         %   exclude : indices that should not be optimized over
         %             useful if initializing with observations or another
         %             dictionary
+        %   record  : if true, the fifth output will be non-empty and
+        %             contain the estimated 3d patch at every iteration 
         
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
+            
+%             if( exist( 'objectParams', 'var') && ~isempty( objParams ))
+%                 fprintf('setting object parameters\n');
+%                 setObjectProperties( this, objParams{:} );
+%             end
+            
+            if( ~exist( 'record', 'var') || isempty( record ))
+                record = 0; 
+            end
+            patchesByIter = {};
+            otherParams   = {};
             
             N = this.pc.numLocs;
             isExclusion = 0;
@@ -152,8 +172,42 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             % initialize patch parameters
             % ie which 2d patch goes into which 3d location
+            modelsSet = 0;
             if( exist( 'iniPatch', 'var' ) && ~isempty( iniPatch ))
-                patchParams = iniPatch;
+                
+                if( ~isempty( this.intXfmModelType ))
+                    
+                    % TODO FIX ME FIX ME!! - WHAT A MESS! :(
+                    if( ~isempty( this.Dini ))
+                        this.paramModels = cell( this.pc.numLocs, 1);
+                        patchParams = zeros( this.pc.numLocs, 1 );
+                    
+                        x = this.Dini( iniPatch, : );
+                        
+                        for j = 1:this.pc.numLocs
+                            fprintf('fitting model for location %d of %d\n', ...
+                                j, this.pc.numLocs );
+                            
+                            [ idx, ~, model ] = this.fitIdxAndModel( j, x' );
+                            patchParams(j) = idx;
+                            this.paramModels{ j } = model;
+                        end
+                        modelsSet = 1;
+                        
+                        if( this.stopAfterFitParamIni )
+                            % stop early and don't iterate
+                            [pv] = this.patchFromParams( patchParams );
+                            costs = this.totalPatchCost();
+                            return;
+                        end
+                    else
+                        this.paramModels = cell( this.pc.numLocs, 1);
+                        patchParams = iniPatch;
+                    end
+                else
+                    patchParams = iniPatch;
+                end
+                
             else
                 patchParams = randi( this.numDict, N, 1 );
             end
@@ -178,7 +232,8 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 %                 keepInds = keepInds( ~exclude );
 %                 randomCoords = keepInds( randomCoords );
 %             end
-            randomCoords = this.genRandomCoords( N, exclude );
+            extra = 10;
+            randomCoords = this.genRandomCoords( N, exclude, extra );
             
             b = this.pc.constraintValueList( this.D2d, patchParams );
             costs = -1.*ones( this.maxIters, 1 );
@@ -188,34 +243,38 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             rcDups = 0;
             while( ~converged )
+                
                 fprintf(' iteration: %d\n', iteration );
-                if( (iteration - rcDups) > length(randomCoords) )
-                    randomCoords = genRandomCoords( this, N, exclude );
+                if( (iteration - rcDups) > this.maxIters )
+                    randomCoords = genRandomCoords( this, N, exclude, extra );
                     rcDups = rcDups + this.maxIters;
                 end
-                i = randomCoords( iteration - rcDups );
                 
-                if( ~isempty( this.intXfmModelType ) ) 
-                    [ bestidx, theseCosts, model ] = ...
+                if( strcmp( this.updateOrder, 'each' ))
+                    i = randomCoords( iteration - rcDups );
+                elseif( strcmp( this.updateOrder, 'all' ))
+                    i = randomCoords( iteration - rcDups, : );
+                end
+                
+                if( ~isempty( this.intXfmModelType ) && ~modelsSet ) 
+                    [ bestidx, ~, model ] = ...
                         this.goodPatchConfigModel( b, i, ...
                         this.chooseBestAtIter );
-                                          
-                    this.paramModels{i} = model;
-                    
+
                 elseif( this.scaleDictElems )
-                    [ bestidx, scaleCost, scale ] = ...
+                    [ bestidx, ~, scale ] = ...
                         this.goodPatchConfigScale( b, i, ...
                                               this.chooseBestAtIter );
                     
                     this.paramScales(i) = scale;
                 else
                     if( this.useSubset )
-                        [bestidx, theseCosts] = this.bestPatchConfigSub( b, i );
+                        [bestidx, ~] = this.bestPatchConfigSub( b, i );
                     else
                         if( this.chooseBestAtIter )
-                            [bestidx, theseCosts] = this.bestPatchConfig( b, i );
+                            [bestidx, ~] = this.bestPatchConfig( b, i );
                         else
-                            [bestidx, theseCosts] = this.goodPatchConfig( b, i );
+                            [bestidx, ~] = this.goodPatchConfig( b, i );
                         end
                     end
                 end
@@ -226,8 +285,28 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     
                 else
                     % were picking the best patch and updating it
-                    patchParams( i ) = bestidx;
-                    theseCosts = this.totalPatchCost( patchParams );
+                    
+                    if( length( i ) > 1 )
+                        % bestidx'
+                        goodidxs = ( bestidx > 0 );
+                        patchParams(goodidxs) = bestidx(goodidxs);
+                    else
+                        patchParams( i ) = bestidx;
+                    end
+                    
+                    if( ~isempty( this.intXfmModelType ) && ~modelsSet )
+                        if( length( model ) > 1 )
+                            this.paramModels = model;
+                        else
+                            this.paramModels{ i } = model;
+                        end
+                    end
+                    
+                    [theseCosts,thisPatch] = this.totalPatchCost( patchParams );
+                    
+                    if( record )
+                        patchesByIter{ iteration } = thisPatch;
+                    end
                     
                     if( numel( theseCosts ) == 1 )
                         costs(iteration) = theseCosts;
@@ -271,9 +350,60 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             [pv] = this.patchFromParams( patchParams );
             
+            if( ~isempty( this.paramModels ))
+                otherParams = this.paramModels;
+            end
+            
         end % build3dPatch
         
-        function cost = totalPatchCost( this, params )
+        function saveSupplemental( this, f_out )
+            N = size(f_out,1);
+            this.savedParams = cell( N , 1 );
+            for i = 1:N
+                this.savedParams{i} = f_out{i}{1}{6};
+            end
+        end
+        
+        function [ gif_fn ] = recordToMovie( this, patchesByIter, destdir )
+            
+            if( ~exist( destdir, 'dir'))
+                mkdir( destdir );
+            end
+            
+            N = length( patchesByIter );
+
+            for i = 1:N
+                
+                if( isempty( patchesByIter{i} ))
+                    continue;
+                end
+                im = reshape( patchesByIter{i}, this.sz3d );
+                
+                nz = this.sz3d(3);
+                dispsz = round( sqrt( nz ));
+                dispsz = [ dispsz, ceil(nz./dispsz(1)) ];
+                imdisp3d( im, 'size', dispsz ) ;
+                
+                % write to file here
+                export_fig(destdir, sprintf('%s/im_%05d.jpg',destdir,i),'-nocrop','-painters');
+                clf('reset');
+                
+            end
+            
+            % temporarily modify LD_LIBRARY_PATH for ImageMagick
+            old_path = getenv('LD_LIBRARY_PATH');
+            setenv('LD_LIBRARY_PATH', '/usr/local/cuda/lib64:');
+            
+            % make the gif
+            gif_fn = sprintf('%s.gif',destdir);
+            gifdelay = 1
+            cmd = sprintf('convert -delay %d -loop 0 %s/*.jpg %s', ...
+                gifdelay, destdir, gif_fn);
+            fprintf('%s\n', cmd);
+            system(cmd);
+        end
+        
+        function [ cost, x ] = totalPatchCost( this, params )
             cmtx    = this.pc.cmtx;
             cmtxInv = this.pc.cmtxInv;
             b = this.constraintValue( params );
@@ -281,19 +411,36 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             cost = norm( cmtx * x - b );
         end
          
-        function randomCoords = genRandomCoords( this, N, exclude )
-         % randomly generate the patch location 
-         % that will be updated at each iteration
-            randomCoords = randi( N, this.maxIters, 1 );
-            if( exist('exclude','var') && ~isempty( exclude ))
-                keepInds = 1:this.pc.numLocs;
-                keepInds = keepInds( ~exclude );
-                randomCoords = keepInds( randomCoords );
+        function randomCoords = genRandomCoords( this, N, exclude, extra )
+            % randomly generate the patch location
+            % that will be updated at each iteration
+            %
+            if( ~exist('extra','var') || isempty( extra ))
+                extra = 1;
+            end
+            
+            switch( this.updateOrder )
+                
+                case 'each'
+                    randomCoords = randi( N, extra.*this.maxIters, 1 );
+                    if( exist('exclude','var') && ~isempty( exclude ))
+                        keepInds = 1:this.pc.numLocs;
+                        keepInds = keepInds( ~exclude );
+                        randomCoords = keepInds( randomCoords );
+                    end
+                case 'all'
+                    randomCoords = zeros( extra.*this.maxIters, N );
+                    for i = 1:this.maxIters
+                        randomCoords( i, : ) = randperm( N );
+                    end
+                otherwise
+                    error('invalid update order');
             end
         end
         
-        function iniParams = iniParamsDist( this, N, method )
-            switch( method)
+        function [iniParams, iniModels] = iniParamsDist( this, N, method )
+            iniModels = [];
+            switch( method )
                 case 'rand'
                     M = this.pc.numLocs;
                     iniParams = mat2cell( ...
@@ -312,8 +459,6 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     iniIdxHelper = reshape( 1:(numIni*numPatchesPerIni), numPatchesPerIni, [] )';
                     
                     M = this.pc.numLocs;
-                    
-                    numPatchesPerIni = length( this.iniLocs );
             
                     Dinirs = reshape( this.Dini', ...
                                         [], numIni*numPatchesPerIni)';
@@ -333,6 +478,17 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                                           ones( N, 1 ));
                     
                     
+                case 'hr'
+
+                    if( isempty( this.Dini ))
+                       error('Dini is empty!!'); 
+                    end
+                    
+                    numIni = size( this.Dini, 1 );
+                    iniParams = mat2cell( randi( numIni, N, 1 ),...
+                                          ones( N, 1 ));
+                    
+
                 otherwise
                     error('invalid ini method');
                     
@@ -352,7 +508,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                             length(this.iniLocs)*ones( N, 1) );
         end
         
-        function [ idx, dist, cmtx ] = goodPatchConfig( this, b, i )
+        function [ idxList, distList, cmtx ] = goodPatchConfig( this, b, iList )
             cmtx    = this.pc.cmtx;
             cmtxInv = this.pc.cmtxInv;
             
@@ -362,25 +518,43 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             x = cmtxInv * bexp;
             curdist = norm( cmtx * x - bexp );
             
-            % the range of constraint values that will change
-            % depending on the patch being tested
-            brng = this.pc.constraintVecSubsets(i,:);
-            
-            idx = [];
-            testOrder = randperm( this.numDict );
-            for nn = 1:this.numDict
-                n = testOrder( nn );
-                bexp( brng ) = this.D2d(n,:);
-                
-                x = cmtxInv * bexp;
-                dist = norm( cmtx * x - bexp );
-                
-                if( dist < curdist )
-                   idx = n;
-                   return;
-                end
+            num = length( iList );
+            if( num > 1 )
+                idxList = zeros( length( iList ), 1);
+                distList    = zeros( length( iList ), 1);
+            else
+                idxList  = [];
+                distList = [];
             end
             
+            for i = iList 
+
+                % the range of constraint values that will change
+                % depending on the patch being tested
+                brng = this.pc.constraintVecSubsets(i,:);
+                
+                testOrder = randperm( this.numDict );
+                for nn = 1:this.numDict
+                    n = testOrder( nn );
+                    bexp( brng ) = this.D2d(n,:);
+                    
+                    x = cmtxInv * bexp;
+                    dist = norm( cmtx * x - bexp );
+                    
+                    if( dist < curdist )
+                       
+                       if ( num > 1 )
+                           idxList( i )  = n;
+                           distList( i ) = dist;
+                       else
+                           idxList  = n;
+                           distList = dist;
+                       end
+                       
+                       break;
+                    end
+                end % over dictionary elements
+            end % iList  
         end
         
         function initializeModels( this, iniParams, convEps, maxIniIters ) 
@@ -450,43 +624,37 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end % while
         end
         
-        function [ idx, dist, model ] = goodPatchConfigModel( this, b, i, doBest )
+        function [ idx, dist, model ] = fitIdxAndModel( this, i, x, doBest )
+            if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
+                doBest =1;
+            end
             
-            cmtx    = this.pc.cmtx;
-            cmtxInv = this.pc.cmtxInv;
-            
-            % initialize experimental constraint values
-            bexp = b;
-            
-            % the range of constraint values that will change
-            % depending on the patch being tested
             rng = this.pc.constraintVecSubsets(i,:);
-            
-            x = cmtxInv * bexp;
-            
+            cmtx    = this.pc.cmtx;
             Ax  = cmtx * x;
             AxR = Ax( rng );
+            
             if( var( AxR ) < 0.0001 )
                 AxR = AxR + 0.0001.*randn(size(AxR));
             end
-                    
-            curdist = norm( AxR - feval( this.paramModels{i}, bexp( rng )) );
-            
+
+
             idx = [];
-            model = this.paramModels{i}; % the current model
-            testOrder = randperm( this.numDict );
-            for nn = 1:this.numDict
-                n = testOrder( nn );
+            curdist = Inf;
+            for n = 1:this.numDict
+
+                bexp = [this.D2d(n,:)]';
+%                 if( length( bexp ) ~= length( AxR ))
+%                     bexp = bexp( rng );
+%                 end
                 
-                bexp( rng ) = this.D2d(n,:);
-                if( var( bexp(rng) ) < 0.0001 )
-                        bexp(rng) = bexp(rng) + 0.0001.*randn(size(bexp(rng)));
+                if( var( bexp ) < 0.0001 )
+                    bexp = bexp + 0.0001.*randn(size(bexp));
                 end
                     
-                    
-                thismodel = fit( bexp(rng), AxR, this.intXfmModelType );
-                dist = norm( AxR - feval( thismodel, bexp( rng )) );
-                
+                thismodel = fit( bexp, AxR, this.intXfmModelType );
+                dist = norm( AxR - feval( thismodel, bexp ) );
+
                 if( (dist < curdist) )
                     idx   = n;
                     model = thismodel;
@@ -495,8 +663,79 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                         return;
                     end
                 end
+            end
+        end
+
+        function [ idx, dist, modelList ] = goodPatchConfigModel( this, b, iList, doBest )
+            
+            cmtx    = this.pc.cmtx;
+            cmtxInv = this.pc.cmtxInv;
+            
+            % initialize experimental constraint values
+            bexp = b;
+            
+            x = cmtxInv * bexp;
+            Ax  = cmtx * x;
+          
+            num = length( iList );
+            
+            
+            if( num > 1 )
+                idx = zeros( num, 1 ); 
+                modelList = cell( num, 1 );
+            else
+                idx = [];
+                modelList = [];
+            end
+            
+            k = 1;
+            for i = iList
+                % the range of constraint values that will change
+                % depending on the patch being tested
+                rng = this.pc.constraintVecSubsets(i,:);
+
+                AxR = Ax( rng );
+                if( var( AxR ) < 0.0001 )
+                    AxR = AxR + 0.0001.*randn(size(AxR));
+                end
+                        
+                curdist = norm( AxR - feval( this.paramModels{i}, bexp( rng )) );
                 
-            end % loop
+                % model = this.paramModels{i}; % the current model
+                
+                testOrder = randperm( this.numDict );
+                for nn = 1:this.numDict
+                    n = testOrder( nn );
+                    
+                    bexp( rng ) = this.D2d(n,:);
+                    if( var( bexp(rng) ) < 0.0001 )
+                        bexp(rng) = bexp(rng) + 0.0001.*randn(size(bexp(rng)));
+                    end
+                    
+                    thismodel = fit( bexp(rng), AxR, this.intXfmModelType );
+                    dist = norm( AxR - feval( thismodel, bexp( rng )) );
+                    
+                    if( (dist < curdist) )
+                        
+                        if( num > 1 )
+                           idx( i )  = n;
+                           modelList{ i } = thismodel;
+                        else
+                            idx = n;
+                            modelList = thismodel;
+                        end
+                        
+                        curdist = dist;
+                        if( ~doBest )
+                            break;
+                        end
+                    end
+                    
+                end % loop
+                
+                k = k + 1;
+                
+            end % iList
         end % goodPatchConfigModel
         
         function [ idx, dist, scale ] = goodPatchConfigScale( this, b, i, doBest )
@@ -549,26 +788,40 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
         end
         
-        function [ bestidx, sims, cmtx ] = bestPatchConfig( this, b, i )
+        function [ bestidx, sims, cmtx ] = bestPatchConfig( this, b, iList )
             cmtx    = this.pc.cmtx;
             cmtxInv = this.pc.cmtxInv;
             
             % initialize experimental constraint values
             bexp = b;
             
-            % the range of constraint values that will change
-            % depending on the patch being tested
-            brng = this.pc.constraintVecSubsets(i,:);
-            
-            sims = zeros( this.numDict, 1 );
-            for n = 1:this.numDict
-                bexp( brng ) = this.D2d(n,:);
-                
-                x = cmtxInv * bexp;
-                sims( n ) = norm( cmtx * x - bexp );
+            num = length( iList );
+            if( num > 1 )
+                bestidx = zeros( length( iList ), 1);
             end
             
-            [ ~, bestidx ] = min( sims );
+            for i = iList
+                % the range of constraint values that will change
+                % depending on the patch being tested
+                brng = this.pc.constraintVecSubsets(i,:);
+                
+                sims = zeros( this.numDict, 1 );
+                for n = 1:this.numDict
+                    bexp( brng ) = this.D2d(n,:);
+                    
+                    x = cmtxInv * bexp;
+                    sims( n ) = norm( cmtx * x - bexp );
+                end
+                
+                [ ~, bi ] = min( sims );
+                
+                if ( num > 1 )
+                   bestidx( i ) = bi;
+                else
+                    bestidx = bi; 
+                end
+
+            end
         end
         
         function [ bestidx, sims, cmtx, btot ] = bestPatchConfigSub( this, b, i )
