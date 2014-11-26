@@ -31,7 +31,7 @@ classdef PatchConstraints < handle
    
     methods
         
-        function this = PatchConstraints( sz, f, overlappingPatches )
+        function this = PatchConstraints( sz, f, overlappingPatches, diffsz2d )
         % Constructor
             this.f    = f;
             if (~exist('overlappingPatches','var') || isempty(overlappingPatches))
@@ -53,6 +53,10 @@ classdef PatchConstraints < handle
             if( isscalar( sz ))
                 this.sz2d = [ sz sz ];
                 this.sz3d = [ sz sz sz ];
+            end
+            
+            if (exist('diffsz2d','var') && ~isempty(diffsz2d))
+                this.sz2d = diffsz2d;
             end
             
             if(  this.overlappingPatches )
@@ -92,6 +96,7 @@ classdef PatchConstraints < handle
             numVariables = prod( this.sz3d );
             
             numPatchLocs   = size( this.dimXyzList, 1 );
+            this.overlapFraction = zeros( numPatchLocs, 1);
             
             this.cmtx = zeros( this.numConstraints, numVariables );
             this.locToConstraint = false( numPatchLocs, this.numConstraints );
@@ -109,10 +114,10 @@ classdef PatchConstraints < handle
                 
                 % TODO - dont recompute this msk every time
                 msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
-                
+                this.overlapFraction( i ) = nnz( msk ) ./ ( patchNumElem .* this.f );
                 for j = 1:patchNumElem
                     
-                    this.cmtx( k, (msk==j) ) = 1;
+                    this.cmtx( k, (msk==j) ) = this.overlapFraction(i);
                     this.locToConstraint( i, k ) = 1;
                     
                     k = k + 1;

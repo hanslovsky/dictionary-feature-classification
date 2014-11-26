@@ -24,6 +24,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
        stopAfterFitParamIni = 1;
        
        scaleDictElems = 0;
+       scaleByOverlap = 0;
        paramScales;
        
        recordParamsOverIters = 0;
@@ -51,6 +52,11 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 this.pc.compXsectInverses();
                 fprintf('.done\n');
             end
+            
+            if( this.scaleByOverlap )
+                this.paramScales = this.pc.overlapFraction;
+            end
+                
         end
         
         function [ patchParams, iteration, costs ] = build3dPatchIni_old( this, iniPatch, locs )
@@ -371,7 +377,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
             
             N = length( patchesByIter );
-
+            figure('color','w','WindowStyle','docked');
             for i = 1:N
                 
                 if( isempty( patchesByIter{i} ))
@@ -640,6 +646,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 
 
             idx = [];
+            model = [];
             curdist = Inf;
             for n = 1:this.numDict
 
@@ -652,13 +659,19 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     bexp = bexp + 0.0001.*randn(size(bexp));
                 end
                     
-                thismodel = fit( bexp, AxR, this.intXfmModelType );
-                dist = norm( AxR - feval( thismodel, bexp ) );
-
+                if( ~isempty(this.intXfmModelType))
+                    thismodel = fit( bexp, AxR, this.intXfmModelType );
+                    dist = norm( AxR - feval( thismodel, bexp ) );
+                else
+                    dist = norm( AxR - bexp );
+                end
+                
                 if( (dist < curdist) )
                     idx   = n;
-                    model = thismodel;
                     curdist = dist;
+                    if( ~isempty(this.intXfmModelType))
+                        model = this.model;
+                    end
                     if( ~doBest )
                         return;
                     end
@@ -860,7 +873,9 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     rng = this.pc.constraintVecSubsets(i,:); 
                     b( rng ) = feval(this.paramModels{i}, b( rng ));
                 end
-            elseif( this.scaleDictElems )
+            end
+            if( this.scaleDictElems || this.scaleByOverlap )
+                fprintf('scaling contstraints\n');
                 for i = 1:this.pc.numLocs
                     rng = this.pc.constraintVecSubsets(i,:); 
                     b( rng ) = this.paramScales(i) .* b( rng );

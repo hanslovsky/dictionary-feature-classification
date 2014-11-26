@@ -143,12 +143,7 @@ classdef Dict2dTo3d < handle
             obj.D3d = this.D3d;
             obj.numDict3d = this.numDict3d;
             
-            obj.allSims = this.allSims;
-            obj.Nbest = this.Nbest;
-            obj.maxItersPerPatch = this.maxItersPerPatch;
-            obj.verbose = this.verbose;
-            
-            obj.dimXyzList = this.dimXyzList;
+            obj.clone( this );
         end
         
         function clone(this, other)
@@ -162,6 +157,9 @@ classdef Dict2dTo3d < handle
             this.sz3d = other.sz3d;
             this.D3d  = other.D3d;
             this.numDict3d = other.numDict3d;
+            
+            this.paramList = other.paramList;
+            this.costList  = other.costList;
             
             this.allSims = other.allSims;
             this.Nbest = other.Nbest;
@@ -459,6 +457,50 @@ classdef Dict2dTo3d < handle
             this.D3d = patches3d;
         end
         
+        function [ constrList, mskList ] = renderConstraints( this, paramsIn )
+            if( isa( paramsIn, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
+                params = patchParamNodeToArray( paramNode );
+            else 
+                params = paramsIn;
+            end
+            
+            if( size(params,2) == 3 )
+                idxs = params(:,3);
+                dims = params(:,1);
+                xyzs = params(:,2);
+            else
+                idxs = params;
+                dims = this.pc.dimXyzList(:,1);
+                xyzs = this.pc.dimXyzList(:,2);
+            end
+            
+            numConstraints = size( params, 1 );
+            
+            domask = 0;
+            mskList = [];
+            if( nargout > 1 )
+                domask = 1;
+                mskList = cell( numConstraints, 1);
+            end
+            
+            constrList     = cell( numConstraints, 1);
+            for n = 1:numConstraints 
+                 dim = dims(n);
+                 xyz = xyzs(n);
+                 msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f, 0 );
+                 
+                 thisConstraint = zeros( size(msk) );
+                 dictElem = this.D2d( idxs(n), : );
+                 mskvals = ( msk > 0 );
+                 thisConstraint( mskvals ) = dictElem( msk( mskvals ));
+                 constrList{n} = thisConstraint;
+                 
+                 if( domask )
+                    mskList{ n } = msk;
+                 end
+            end
+        end
+        
         function [ pvHR, patchHR ] = reconPatch( this, patchLR, doNorm )
             
             % doNormalization by default
@@ -500,96 +542,138 @@ classdef Dict2dTo3d < handle
             
         end
 
-        function [ pv, patch, cmtx, b ] = patchFromParams( this, splNode)
+        function [ pv, patch, cmtx, b ] = patchFromParams( this, nodeOrList )
             if( ~isempty(this.pc))
-                [ pv, patch, cmtx, b ] = patchFromParamsPre( this, splNode);
+                [ pv, patch, cmtx, b ] = patchFromParamsPre( this, nodeOrList);
             else
-                [ pv, patch, cmtx, b ] = patchFromParamsComp( this, splNode);
+                [ pv, patch, cmtx, b ] = patchFromParamsComp( this, nodeOrList);
             end
         end
         
-        function [ pv, patch, cmtxi, b ] = patchFromParamsPre( this, splNode)
-        % Compute patch from parameters using a precomputed constraint
-        % matrix from the PatchConstraints object
+        function [ pv, patch, cmtxi, b ] = patchFromParamsPre( this, splNodeIn )
+            % Compute patch from parameters using a precomputed constraint
+            % matrix from the PatchConstraints object
             
-            % fprintf('patch from precomputed constraints\n');
-            if( isempty( splNode ))
+            fprintf('patch from precomputed constraints\n');
+            if( isempty( splNodeIn ))
                 patch = [];
                 pv = [];
                 return;
             end
-
-            cmtxi = this.pc.cmtxInv;
-            b     = this.constraintValue( splNode );
-
-            pv = cmtxi * b;
-            if( nargout > 1 )
-                patch = reshape( pv, this.sz3d );
+            
+            docell = 0;
+            if( ~iscell( splNodeIn ))
+                splNodeList = { splNodeIn };
+            else
+                docell = 1;
+                splNodeList = splNodeIn;
+                pv    = cell( length(splNodeList), 1 );
+                patch = cell( length(splNodeList), 1 );
             end
             
+            cmtxi = this.pc.cmtxInv;
+            
+            for n = 1:length(splNodeList)
+                splNode = splNodeList{ n };
+                b = this.constraintValue( splNode );
+                
+                if( docell )
+                    pv{n} = cmtxi * b;
+                    if( nargout > 1 )
+                        patch{n} = reshape( pv{n}, this.sz3d );
+                    end
+                else
+                    pv = cmtxi * b;
+                    if( nargout > 1 )
+                        patch = reshape( pv, this.sz3d );
+                    end
+                end
+                
+            end
         end
 
-        function [ pv, patch, cmtx, b ] = patchFromParamsComp( this, splNode )
+        function [ pv, patch, cmtx, b ] = patchFromParamsComp( this, splNodeIn )
         % splNode must be a sortedTreeNode< SubPatch2dLocation >   
-            if( isempty( splNode ))
+            if( isempty( splNodeIn ))
                 patch = [];
                 pv = [];
                 return;
+                
             end
-            
-            % check validity of input
-            if( isa( splNode, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
-                if( ~ isa( splNode.getData(), 'net.imglib2.algorithms.patch.SubPatch2dLocation' ))
-                    error( 'splNode must contain a ''net.imglib2.algorithms.patch.SubPatch2dLocation'' ');    
-                end
+            docell = 0;
+            if( ~iscell( splNodeIn ))
+                splNodeList = { splNodeIn };
             else
-                % here
-                try
-                    splNode = Dict2dTo3d.patchParamArrayToNode(splNode);
-                catch e
-                   error('tried to make a node from an array but failed'); 
-                end
-%                 error( 'splNode must be a ''net.imglib2.algorithms.opt.astar.SortedTreeNode'' ');
+                splNodeList = splNodeIn;
+                pv = cell( length(splNodeList) );
+                docell = 1;
             end
             
-            paramNode = splNode;
-            param     = paramNode.getData();
-            
-            numConstraints = splNode.getDepth() + 1;
-            
-            N = numConstraints .* prod( this.sz2d );  % the number of constraints
-            M = prod( this.sz3d ); % the number of elements in the HR patch
-            
-            cmtx = zeros( N, M );
-            b    = zeros( N, 1 );
-            
-            k = 1;
-            for i = 1:numConstraints
+            for n = 1:length(splNodeList)
+                splNode = splNodeList{ n };
                 
-                dim = param.dim;
-                xyz = param.xyz;
-                idx = param.idx;
-                %pause;
                 
-                msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
-                
-                for j = 1:prod(this.sz2d)
-                    cmtx( k, (msk == j) ) = 1;
-                    b( k ) = this.D2d( idx, j );
-                    k = k + 1;
+                % check validity of input
+                if( isa( splNode, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
+                    if( ~ isa( splNode.getData(), 'net.imglib2.algorithms.patch.SubPatch2dLocation' ))
+                        error( 'splNode must contain a ''net.imglib2.algorithms.patch.SubPatch2dLocation'' ');
+                    end
+                else
+                    % here
+                    try
+                        splNode = Dict2dTo3d.patchParamArrayToNode(splNode);
+                    catch e
+                        error('tried to make a node from an array but failed');
+                    end
+                    %                 error( 'splNode must be a ''net.imglib2.algorithms.opt.astar.SortedTreeNode'' ');
                 end
                 
-                if( ~paramNode.isRoot())
-                    paramNode = paramNode.getParent();
-                    param     = paramNode.getData();
+                paramNode = splNode;
+                param     = paramNode.getData();
+                
+                numConstraints = splNode.getDepth() + 1;
+                
+                N = numConstraints .* prod( this.sz2d );  % the number of constraints
+                M = prod( this.sz3d ); % the number of elements in the HR patch
+                
+                cmtx = zeros( N, M );
+                b    = zeros( N, 1 );
+                
+                k = 1;
+                for i = 1:numConstraints
+                    
+                    dim = param.dim;
+                    xyz = param.xyz;
+                    idx = param.idx;
+                    %pause;
+                    
+                    msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
+                    
+                    for j = 1:prod(this.sz2d)
+                        cmtx( k, (msk == j) ) = 1;
+                        b( k ) = this.D2d( idx, j );
+                        k = k + 1;
+                    end
+                    
+                    if( ~paramNode.isRoot())
+                        paramNode = paramNode.getParent();
+                        param     = paramNode.getData();
+                    end
                 end
-            end
-            
-            pv = pinv( cmtx ) * b;
-            if( nargout > 1 )
-                patch = reshape( pv, this.sz3d );
-            end
-            
+                
+                if( docell )
+                    pv = pinv( cmtx ) * b;
+                     if( nargout > 1 )
+                        patch = reshape( pv, this.sz3d );
+                    end
+                else
+                    pv{n} = pinv( cmtx ) * b;
+                    if( nargout > 1 )
+                        patch{n} = reshape( pv{n}, this.sz3d );
+                    end
+                end
+                
+            end % loop over nodes
         end
        
         function xyzn = randomFillOrderBlah( this )
