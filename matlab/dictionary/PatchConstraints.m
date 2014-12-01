@@ -19,6 +19,7 @@ classdef PatchConstraints < handle
         subCmtxAndInvs;
         constraintVecXsectSubsets; %
         constraintVecSubsets; %
+        scaleByOverlap = 1;
         
         overlapFraction;    % fraction of this location that
                             % overlaps with field-of-view
@@ -31,13 +32,16 @@ classdef PatchConstraints < handle
    
     methods
         
-        function this = PatchConstraints( sz, f, overlappingPatches, diffsz2d )
+        function this = PatchConstraints( sz, f, overlappingPatches, scaleByOverlap, diffsz2d )
         % Constructor
             this.f    = f;
             if (~exist('overlappingPatches','var') || isempty(overlappingPatches))
                 this.overlappingPatches = 0;
             else
                 this.overlappingPatches = overlappingPatches;
+            end
+            if (exist('scaleByOverlap','var') && ~isempty(scaleByOverlap))
+                this.scaleByOverlap = scaleByOverlap;    
             end
             
             if( length( sz ) > 2 )
@@ -102,6 +106,8 @@ classdef PatchConstraints < handle
             this.locToConstraint = false( numPatchLocs, this.numConstraints );
             this.constraintVecSubsets = false( numPatchLocs, this.numConstraints );
             
+             this.scaleByOverlap
+             
             k = 1;
             for i = 1 : numPatchLocs
                 
@@ -117,7 +123,12 @@ classdef PatchConstraints < handle
                 this.overlapFraction( i ) = nnz( msk ) ./ ( patchNumElem .* this.f );
                 for j = 1:patchNumElem
                     
-                    this.cmtx( k, (msk==j) ) = this.overlapFraction(i);
+                    if( this.scaleByOverlap )
+                        this.cmtx( k, (msk==j) ) = 1./this.overlapFraction(i);
+                    else
+                        this.cmtx( k, (msk==j) ) = 1;
+                    end
+                    
                     this.locToConstraint( i, k ) = 1;
                     
                     k = k + 1;

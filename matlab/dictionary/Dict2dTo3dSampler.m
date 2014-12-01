@@ -24,7 +24,6 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
        stopAfterFitParamIni = 1;
        
        scaleDictElems = 0;
-       scaleByOverlap = 0;
        paramScales;
        
        recordParamsOverIters = 0;
@@ -45,8 +44,8 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
         % D2d - 
         % sz  - size of 2d patches
         % f   - downsampling factor
-        function this = Dict2dTo3dSampler( D2d, sz, f, overlappingPatches )
-            this = this@Dict2dTo3d( D2d, sz, f, overlappingPatches );
+        function this = Dict2dTo3dSampler( D2d, sz, f, overlappingPatches, scaleByOverlap )
+            this = this@Dict2dTo3d( D2d, sz, f, overlappingPatches, scaleByOverlap );
             if( this.useSubset )
                 fprintf('Computing insersection matrix inverses...');
                 this.pc.compXsectInverses();

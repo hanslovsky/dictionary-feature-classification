@@ -42,7 +42,8 @@ classdef Dict2dTo3d < handle
         
         allSims;
         
-
+        scaleByOverlap = 0;
+        
         ndims = 3; 
     end
     
@@ -52,6 +53,8 @@ classdef Dict2dTo3d < handle
         maxItersPerPatch = 5000;
         minDictElemDiff = 0.001;
         maxDictCost     = -1;
+        
+        
         
         % patch configuration options
         overlappingPatches = 1;
@@ -68,7 +71,7 @@ classdef Dict2dTo3d < handle
     
     methods
 
-        function this = Dict2dTo3d( D2d, sz, f, overlappingPatches )
+        function this = Dict2dTo3d( D2d, sz, f, overlappingPatches, scaleByOverlap )
         % Constructor
         % D2d - 
         % sz  - size of 2d patches
@@ -117,19 +120,23 @@ classdef Dict2dTo3d < handle
             if( exist('overlappingPatches','var'))
                 this.overlappingPatches = overlappingPatches;
             end
+            if (exist('scaleByOverlap','var') && ~isempty(scaleByOverlap))
+                this.scaleByOverlap = scaleByOverlap;
+            end
             
             % remove low variance (ie uninteresting) dictionary
 %             this.cleanDict2d();
             
             % use a PatchConstraints object to compute
             % the constraint matrix once
-            this.pc = PatchConstraints( sz, f, this.overlappingPatches );
-            
-            fprintf('Computing constraint matrix inverse...');
-            this.pc.buildCmtx();
-            fprintf('.done\n');
+            this.iniPatchConstraints();
 
             %this.buildIniLocs();
+        end
+        
+        function setScaleByOverlap( this, scaleByOl )
+            this.scaleByOverlap = scaleByOl;
+            this.iniPatchConstraints();
         end
         
         function setD3d( this, dict3d )
@@ -1314,6 +1321,14 @@ classdef Dict2dTo3d < handle
             
         end
         
+        function iniPatchConstraints( this )
+%             fprintf('scaleByOverlap: %d\n', this.scaleByOverlap);
+            this.pc = PatchConstraints( this.sz3d(1), this.f, this.overlappingPatches, this.scaleByOverlap );
+            
+            fprintf('Computing constraint matrix inverse...');
+            this.pc.buildCmtx();
+            fprintf('.done\n');
+        end
     end 
     
     methods( Static )
