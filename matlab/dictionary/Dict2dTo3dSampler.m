@@ -323,9 +323,10 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     if( abs( costs(iteration) - lastCost  ) < this.convEps )
                         itersAtThisCost = itersAtThisCost + 1;
                     else
+                        lastCost = costs(iteration);
+                        fprintf('updated last cost to: %f\n', lastCost);
                         itersAtThisCost = 0;
                     end
-                    lastCost = costs(iteration);
                     
                     b = this.pc.updateConstraints( this.D2d, b, i, bestidx );
                 end
@@ -337,6 +338,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 
                 % force exit after max iteration count
                 if(iteration >= this.maxIters)
+                    fprintf('hit max iters!\n');
                     converged = 1;
                 else
                     iteration = iteration + 1;
@@ -629,6 +631,66 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end % while
         end
         
+        function [ paramList, modelList ] = fitParamsToHR_dist( this, ini )
+            global DICTPATH;
+             
+            % check that we have a valid initialization to go with
+            if( isscalar( ini ))
+                if( isempty( this.Dini ))
+                    error( 'Dini and ini param are empty - cannot run fitParamsToHR_dist');
+                end
+                iniParam = this.iniParamsDist( ini, 'hr');
+            else
+                iniParam = ini;
+            end
+            num_jobs = length( iniParam );
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 2; % fitParamsToHR has 2 output args
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                repmat( {'this'}, num_jobs, 1), ...
+                repmat( {'fitParamsToHR'}, num_jobs, 1), ...
+                repmat( {num_out_args}, num_jobs, 1), ...
+                iniParam, ...
+                };
+            
+            f_out = qsub_dist(fun, 1, use_gpu, ...
+                [], [], run_script, ...
+                varargin{:} );
+            
+            paramList = cell( num_jobs, 1 );
+            modelList = cell( num_jobs, 1 );
+            for i = 1:size(f_out,1)
+                paramList{i} = f_out{i}{1}{1};
+                modelList{i} = f_out{i}{1}{2};
+            end
+            
+        end
+        
+        function [ patchParams, modelList ] = fitParamsToHR( this, x )
+            patchParams = zeros( this.pc.numLocs, 1 );
+            modelList   = cell ( this.pc.numLocs, 1 );
+            
+            x = vecToRowCol( x, 'col');
+            for j = 1:this.pc.numLocs
+                
+                fprintf('fitting model for location %d of %d\n', ...
+                            j, this.pc.numLocs );
+                
+                [ idx, ~, model ] = this.fitIdxAndModel( j, x );
+                patchParams(j) = idx;
+                
+                if( ~isempty(this.intXfmModelType))
+                    modelList{ j } = model;
+                end
+            end
+        end
+        
         function [ idx, dist, model ] = fitIdxAndModel( this, i, x, doBest )
             if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
                 doBest =1;
@@ -675,6 +737,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                         return;
                     end
                 end
+                
             end
         end
 
@@ -873,17 +936,28 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     b( rng ) = feval(this.paramModels{i}, b( rng ));
                 end
             end
-            if( this.scaleDictElems || this.scaleByOverlap )
-                fprintf('scaling contstraints\n');
+            if( this.scaleDictElems )
+                fprintf('scaling constraints\n');
                 for i = 1:this.pc.numLocs
                     rng = this.pc.constraintVecSubsets(i,:); 
                     b( rng ) = this.paramScales(i) .* b( rng );
                 end
             end
         end
+
     end
     
     methods( Static )
+        
+        function DiniHR = upsampleInitialObservations( DiniLR, iniSz, outSz, dsFactor, interpOpts )
+            Nini = size( DiniLR, 1 );    
+            DiniHR = zeros( Nini, prod(outSz));
+            for i = 1:Nini
+                imtmp = reshape( DiniLR( i, :), iniSz );
+                im_re = upsampleObservationForIni( imtmp, iniSz(1), dsFactor, interpOpts{:} );
+                DiniHR(i,:) = im_re(:); 
+            end
+        end
         
         function s = scalingFactor( truevec, testvec, type )
             switch( type )
