@@ -63,22 +63,13 @@ classdef PatchConstraints < handle
                 this.sz2d = diffsz2d;
             end
             
-            if(  this.overlappingPatches )
-                if( this.overlappingFull )
-                    this.pairLocRng = (-this.f + 2) : this.sz3d(1);
-                else
-                    this.pairLocRng = (1) : this.sz3d(1)- this.f + 1;
-                end
-            else
-                this.pairLocRng = (1) : this.f : this.sz3d(1);
-            end
-            
-            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
-            this.dimXyzList = [ dList(:), xyzList(:) ];
-            this.numLocs = size( this.dimXyzList, 1 );
-            
-            this.numConstraints = prod( this.sz2d ) *  this.numLocs;
-            this.buildIntersectionList();
+            this.iniLocs();
+
+        end
+        
+        function setOverlappingFull( this, overlappingFull )
+           this.overlappingFull = overlappingFull;
+           this.iniLocs();
         end
         
         function idx = locXyzDim2Idx( this, dim, xyz )
@@ -105,8 +96,6 @@ classdef PatchConstraints < handle
             this.cmtx = zeros( this.numConstraints, numVariables );
             this.locToConstraint = false( numPatchLocs, this.numConstraints );
             this.constraintVecSubsets = false( numPatchLocs, this.numConstraints );
-            
-             this.scaleByOverlap
              
             k = 1;
             for i = 1 : numPatchLocs
@@ -376,4 +365,28 @@ classdef PatchConstraints < handle
         end
         
     end
+    
+    methods( Access = protected )
+        
+        function iniLocs( this )
+            % Initialize Location parameters 
+            if(  this.overlappingPatches )
+                if( this.overlappingFull )
+                    this.pairLocRng = (-this.f + 2) : this.sz3d(1);
+                else
+                    this.pairLocRng = (1) : this.sz3d(1)- this.f + 1;
+                end
+            else
+                this.pairLocRng = (1) : this.f : this.sz3d(1);
+            end
+            
+            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+            this.dimXyzList = [ dList(:), xyzList(:) ];
+            this.numLocs = size( this.dimXyzList, 1 );
+            
+            this.numConstraints = prod( this.sz2d ) *  this.numLocs;
+            this.buildIntersectionList();
+        end
+    end
+    
 end
