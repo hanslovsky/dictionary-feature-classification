@@ -1700,6 +1700,15 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        function iterCounts = iterationCounts_dist( f_out )
+        % outputs the final iteration count for each distributed buildPatch3d job
+            N = length( f_out );
+            iterCounts = zeros( N, 1);
+            for i = 1:N
+                iterCounts(i) = find( ( f_out{i}{1}{4} > -1 ), 1, 'last');
+            end
+        end
+        
     end % static methods
     
 end % class
