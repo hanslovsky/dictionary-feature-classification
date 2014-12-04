@@ -126,6 +126,52 @@ classdef PatchConstraints < handle
             
             this.cmtxInv = pinv( this.cmtx );
         end
+               
+        function [ H, f, A, bineq, Aeq, beq ] = buildQuadProg( this, b, constrainScalesPos )
+            f = [];
+            if( ~exist('constrainScalesPos','var') || isempty( constrainScalesPos ))
+                constrainScalesPos = true;
+            end
+            
+            patchNumElem = prod( this.sz2d );   
+            numVariables = prod( this.sz3d );
+            numParams = numVariables + this.numLocs; 
+            
+            % put hard constraint on sum of HR pixel values
+            Aeq = zeros( 1, numParams );
+            Aeq( this.numLocs + 1 : end ) = 1;
+            beq = 1;
+            
+            % ensure scales are positive
+            if( constrainScalesPos )
+                A = zeros( this.numLocs, numParams);
+                A( 1:this.numLocs, 1:this.numLocs ) = -eye( this.numLocs );
+                bineq = zeros( this.numLocs, 1);
+            end
+            
+            % build H matrix
+            H = zeros( numParams, numParams );
+            Htemplate = PatchConstraints.buildQuadConstraintTemplate( this.f );
+            
+            k = 1;
+            for i = 1 : this.numLocs
+                
+                thisdim = this.dimXyzList(i,1);
+                thisxyz = this.dimXyzList(i,2);
+                
+                msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+                
+                for j = 1:patchNumElem
+                    
+                    mskIdx = find( msk == j ) + this.numLocs;
+                    Hsub = PatchConstraints.fillInQuadConstraintTemplate( Htemplate, b(k));
+                    HsubRng = [ i; mskIdx ];
+                    H( HsubRng, HsubRng ) = H( HsubRng, HsubRng ) + Hsub;
+                    
+                    k = k + 1;
+                end % loop over pixels per patch
+            end % loop over patch locations
+        end
         
         function compXsectInverses( this )
             N =  size(this.locToConstraint, 1);
@@ -389,4 +435,32 @@ classdef PatchConstraints < handle
         end
     end
     
+    methods( Static )
+        
+        function [ Hsub ] = fillInQuadConstraintTemplate( Htemplate, b )
+            % Fills in the specific values of a submatrix given
+            %
+            if( ~isscalar( b ))
+                error( 'b must be scalar' );
+            end
+            
+            Hsub = Htemplate;
+            Hsub( Htemplate == -1 ) =  -b;
+            Hsub( Htemplate == -2 ) =  b.*b;
+        end
+        
+        function [ Htemplate, ri, ci ] = buildQuadConstraintTemplate( f )
+            
+            % each constraint effects one scale and 'f' HR pixel intensities
+            numParamsPerConstraint = f + 1;
+            
+            Htemplate = zeros( numParamsPerConstraint, numParamsPerConstraint );
+            
+            % the scale goes in the first row/column
+            Htemplate( 1, 2:end ) = -1; % the pixel-scale interaction
+            Htemplate( 2:end, 1 ) = -1; % the scale-pixel interaction
+            Htemplate( 1, 1)   = -2;  % the scale-scale element is different
+            Htemplate( 2:end, 2:end ) = 1; % the pixel-pixel interaction
+        end
+    end
 end
