@@ -28,6 +28,7 @@ classdef PatchConstraints < handle
     properties
         overlappingPatches;
         overlappingFull = 1;
+        % aBigNumber = 1000;
     end
    
     methods
@@ -127,11 +128,17 @@ classdef PatchConstraints < handle
             this.cmtxInv = pinv( this.cmtx );
         end
                
-        function [ H, f, A, bineq, Aeq, beq ] = buildQuadProg( this, b, constrainScalesPos )
+        function [ H, f, A, bineq, Aeq, beq, lb, ub ] = buildQuadProg( this, b, constrainScalesPos, ...
+                                                    constrainHrMinMax )
             f = [];
             if( ~exist('constrainScalesPos','var') || isempty( constrainScalesPos ))
                 constrainScalesPos = true;
             end
+            
+            if( ~exist('constrainHrMinMax','var') || isempty( constrainHrMinMax ))
+                constrainScalesPos = false;
+            end
+            
             
             patchNumElem = prod( this.sz2d );   
             numVariables = prod( this.sz3d );
@@ -142,11 +149,44 @@ classdef PatchConstraints < handle
             Aeq( this.numLocs + 1 : end ) = 1;
             beq = 1;
             
+            A = [];
+            bineq = [];
+            
+            aBigNumber = 1000;
+            
+            if ( constrainScalesPos || constrainHrMinMax )
+                lb = -aBigNumber .* ones( numParams, 1 );
+                ub =  aBigNumber .* ones( numParams, 1 );
+            else
+                lb = [];
+                ub = [];
+            end
+            
             % ensure scales are positive
             if( constrainScalesPos )
-                A = zeros( this.numLocs, numParams);
-                A( 1:this.numLocs, 1:this.numLocs ) = -eye( this.numLocs );
-                bineq = zeros( this.numLocs, 1);
+%                 A = zeros( this.numLocs, numParams);
+%                 A( 1:this.numLocs, 1:this.numLocs ) = -eye( this.numLocs );
+%                 bineq = zeros( this.numLocs, 1);
+
+                lb( 1:this.numLocs )  = 0;
+            end
+            
+
+%             min_b = min( b( this.numLocs + 1 : end) );
+            min_b = 0;
+            max_b = max( b( this.numLocs + 1 : end) );
+            if( constrainHrMinMax )
+                
+%                 AHrMinMax = zeros( 2 .* numVariables, numParams );
+%                 AHrMinMax( :, this.numLocs + 1 : end ) = [ -eye(numVariables); eye(numVariables) ];
+% 
+%                 A = [ A; AHrMinMax ];
+%                 bHrMinMax = [ repmat( min_b, numVariables, 1); repmat( max_b, numVariables, 1) ];
+%                 bineq = [ bineq; bHrMinMax ];
+                
+                lb( this.numLocs + 1 : end ) = min_b;
+                ub( this.numLocs + 1 : end ) = max_b;
+                
             end
             
             % build H matrix
@@ -166,7 +206,8 @@ classdef PatchConstraints < handle
                     mskIdx = find( msk == j ) + this.numLocs;
                     Hsub = PatchConstraints.fillInQuadConstraintTemplate( Htemplate, b(k));
                     HsubRng = [ i; mskIdx ];
-                    H( HsubRng, HsubRng ) = H( HsubRng, HsubRng ) + Hsub;
+                    M = length( HsubRng );
+                    H( HsubRng, HsubRng ) = H( HsubRng, HsubRng ) + Hsub(1:M, 1:M);
                     
                     k = k + 1;
                 end % loop over pixels per patch
