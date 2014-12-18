@@ -324,7 +324,27 @@ classdef Tid < handle
         end
         
         function downsamplerRs = getDownsampler3dzRs()
-            downsamplerRs = @(X,sz,f) (reshape(permute(reshape(mean(reshape(permute( reshape(X, [sz size(X,2)] ), [ 3 2 1 4]), f, [])), [sz(3)./f sz(1) sz(2) size(X,2)]), [ 3 2 1 4]), [], size(X,2) )); 
+            downsamplerRs = @(X,sz,f) (reshape(permute(reshape(mean(reshape(permute( reshape(X, [sz size(X,2)] ), [ 3 2 1 4 ]), f, [])), [sz(3)./f sz(1) sz(2) size(X,2)]), [ 3 2 1 4 ]), [], size(X,2) )); 
+        end
+        
+        function X_ds = downsampleZAvgRs( X, sz, dsFactor )
+            N = size( X, 1 );
+            M = prod( sz );
+            Mds = M ./ dsFactor;
+            X_ds = zeros( N, Mds );
+            for n = 1:N
+               im = reshape( X(n,:), sz );
+               imds = Tid.downsampleZAvg( im, dsFactor );
+               X_ds( n, : ) = imds( : );
+            end
+        end
+        
+        function im_ds = downsampleZAvg( im, dsFactor )
+            sz = size( im );
+            szds = sz ./ [1 1 dsFactor];
+            szdsp = szds( [3 1 2 ]);
+            imv = reshape(permute( im, [3 1 2] ), dsFactor, [] );
+            im_ds = permute( reshape(mean( imv, 1 ), szdsp ), [ 2 3 1]);
         end
         
     end % static methods
