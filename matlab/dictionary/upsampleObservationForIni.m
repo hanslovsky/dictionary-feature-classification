@@ -2,7 +2,7 @@ function im_re = upsampleObservationForIni( im, sz, usFactorZ, interpOpts )
 % Usage:
 %   im_re = upsampleObservationForIni( im, sz, usFactorZ, interpOpts )
 
-if( ~exist('interOpts','var') || ~iscell(interOpts))
+if( ~exist('interpOpts','var'))
     interpOpts = {};
 end
 
@@ -27,8 +27,12 @@ else
     zrng = -zHalf : zHalf;
 end
 
-
-[ xo, yo, zo ] = meshgrid( xrng, yrng, zrng * half );
-[ xn, yn, zn ] = meshgrid( xrng, yrng, xrng );
-
-im_re = interp3( xo, yo, zo, im, xn, yn, zn, interpOpts{:} );
+if( ~isempty( interpOpts ) && any(strcmp( interpOpts, 'nearest' )))
+    fprintf('UPSAMPLING NEAREST-NEIGHBOR');
+	zSamples = repmat(1:sz(3), usFactorZ , 1);
+    im_re = im( :, :, zSamples );
+else
+    [ xo, yo, zo ] = meshgrid( xrng, yrng, zrng * half );
+    [ xn, yn, zn ] = meshgrid( xrng, yrng, xrng );
+    im_re = interp3( xo, yo, zo, im, xn, yn, zn, interpOpts{:} );
+end
