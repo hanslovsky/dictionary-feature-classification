@@ -127,7 +127,9 @@ classdef Dict2dTo3d < handle
             
             % use a PatchConstraints object to compute
             % the constraint matrix once
-            this.iniPatchConstraints();
+            if( ~isa( this, 'Dict2dTo3dSamplerGen' ))
+                this.iniPatchConstraints();
+            end
 
             %this.buildIniLocs();
         end
@@ -219,7 +221,34 @@ classdef Dict2dTo3d < handle
             numRemoved = this.numDict - newSize;
             this.numDict = newSize;
         end
+       
+        function D2d = importDict2dFromDict3dLR( this, szLR, DLR )
+        % Import 2d dictionary from slices of a low-res 3d dictionary
+
+            N3d = size( DLR, 1 );
+            nz  = szLR( 3 );
+            N2d = N3d * nz;
         
+            D2d = zeros(N2d, prod(szLR(1:2)));
+            k = 1;
+            for i = 1:N3d
+
+                im = reshape(DLR(i,:), szLR);
+
+                for z = 1:nz
+
+                    D2d(k,:) = reshape( im(:,:,z), 1, [] );
+                    
+                    k = k + 1;
+
+                end % loop over z
+            end % loop over 3d dict elements
+
+            D2d = bsxfun( @rdivide, D2d, sqrt(sum(D2d.^2,2)));
+            this.D2d     = D2d;
+            this.numDict = N2d;
+        end
+
         function trimDict2d( this )
         % removes "extra" elements from the 2d dictionary
         % that might arise from initializations
@@ -414,9 +443,10 @@ classdef Dict2dTo3d < handle
             this.D3d = patches3d;
         end
         
-        function saveSupplemental( this, f_out )
+        function f_out = saveSupplemental( this, f_out )
             % do nothing, 
             % but subclasses may use.
+            f_out = [];
         end
         
         function [ patches3d ] = build3dDictionary( this, dict3dSize, inioutmethod )
