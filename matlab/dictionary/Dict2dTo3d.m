@@ -682,6 +682,94 @@ classdef Dict2dTo3d < handle
                 
             end % loop over nodes
         end
+        
+        function [ pv, patch ] = patchFromParamsScale( this, splNodeIn, ...
+                                                       constrainScalesPos, ...
+                                                       constrainHrMinMax )
+            if( isempty( splNodeIn ))
+                patch = [];
+                pv = [];
+                return;
+            end
+            
+            doReshape = 0;
+            if( nargout > 1 )
+                doReshape = 1;
+            end
+            
+            docell = 0;
+            if( ~iscell( splNodeIn ))
+                splNodeList = { splNodeIn };
+            else
+                docell = 1;
+                splNodeList = splNodeIn;
+                pv    = cell( length(splNodeList), 1 );
+                
+                if( doReshape )
+                    patch = cell( length(splNodeList), 1 );
+                end
+            end
+            
+            quadopts = cell( 8, 1 );
+            
+            for n = 1:length(splNodeList)
+                splNode = splNodeList{ n };
+                b = this.constraintValue( splNode );
+                
+                [ quadopts{1:8} ] = this.pc.buildQuadProg( b, constrainScalesPos, constrainHrMinMax );
+                [pvtmp,~,exitflag] = quadprog( quadopts{:}, [], 'interior-point-convex' );
+                
+                if( exitflag < 0 )
+                    continue;
+                end
+                
+                if( docell )
+                    pv{n} = pvtmp;
+                    if( doReshape )
+                        patch{n} = reshape( pvtmp, this.sz3d );
+                    end
+                else
+                    pv = pvtmp;
+                    if( doReshape )
+                        patch = reshape( pv, this.sz3d );
+                    end
+                end
+                
+            end
+        end
+        
+        function [ pvList ] = patchFromParamsScale_dist( this, params, ...
+                                                       constrainScalesPos, ...
+                                                       constrainHrMinMax )
+            global DICTPATH;
+            this.save();
+            
+            num_jobs = length( params );
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 1; % fitParamsToHR has 2 output args
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                repmat( {'this'}, num_jobs, 1), ...
+                repmat( {'patchFromParamsScale'}, num_jobs, 1), ...
+                repmat( {num_out_args}, num_jobs, 1), ...
+                params, ...
+                repmat( {constrainScalesPos}, num_jobs, 1), ...
+                repmat( {constrainHrMinMax}, num_jobs, 1), ...
+                };
+            
+            f_out = qsub_dist(fun, 1, use_gpu, ...
+                [], [], run_script, ...
+                varargin{:} );
+            
+            pvList = cell( num_jobs, 1 );
+            for i = 1:size(f_out,1)
+                pvList{i} = f_out{i}{1}{1};
+            end
+            
+        end
+        
        
         function xyzn = randomFillOrderBlah( this )
             N = size( this.dimXyzList, 1 );

@@ -631,9 +631,13 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end % while
         end
         
-        function [ paramList, modelList ] = fitParamsToHR_dist( this, ini )
+        function [ paramList, modelList, pvList ] = fitParamsToHR_dist( this, ini, doPatchEst, constrainScalesPos, constrainHrMinMax  )
             global DICTPATH;
-             
+            
+            if( ~exist( 'doPatchEst', 'var' ) || isempty( doPatchEst ))
+                doPatchEst = 1;
+            end
+            
             % check that we have a valid initialization to go with
             if( isscalar( ini ))
                 if( isempty( this.Dini ))
@@ -649,7 +653,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             fun = @run_obj_method_dist;
             use_gpu = 0;
-            num_out_args = 2; % fitParamsToHR has 2 output args
+            num_out_args = 3; % fitParamsToHR has 2 output args
             run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
             
             varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
@@ -657,6 +661,9 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 repmat( {'fitParamsToHR'}, num_jobs, 1), ...
                 repmat( {num_out_args}, num_jobs, 1), ...
                 iniParam, ...
+                repmat( {doPatchEst}, num_jobs, 1), ...
+                repmat( {constrainScalesPos}, num_jobs, 1), ...
+                repmat( {constrainHrMinMax}, num_jobs, 1) ...
                 };
             
             f_out = qsub_dist(fun, 1, use_gpu, ...
@@ -665,16 +672,19 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             paramList = cell( num_jobs, 1 );
             modelList = cell( num_jobs, 1 );
+            pvList = cell( num_jobs, 1 );
             for i = 1:size(f_out,1)
                 paramList{i} = f_out{i}{1}{1};
                 modelList{i} = f_out{i}{1}{2};
+                pvList{i}    = f_out{i}{1}{3};
             end
             
         end
         
-        function [ patchParams, modelList ] = fitParamsToHR( this, x )
+        function [ patchParams, modelList, pv ] = fitParamsToHR( this, x, doPatchEst, constrainScalesPos, constrainHrMinMax )
             patchParams = zeros( this.pc.numLocs, 1 );
             modelList   = cell ( this.pc.numLocs, 1 );
+            pv = [];
             
             x = vecToRowCol( x, 'col');
             for j = 1:this.pc.numLocs
@@ -689,29 +699,32 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     modelList{ j } = model;
                 end
             end
+            
+            if( doPatchEst )
+               [ pv ] = this.patchFromParamsScale( patchParams, constrainScalesPos, constrainHrMinMax  );
+            end
         end
         
-        function [ idx, dist, model ] = fitIdxAndModel( this, i, x, doBest )
+        function [ idx, curdist, model ] = fitIdxAndModel( this, i, x, doBest )
             if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
                 doBest =1;
             end
             
-            rng = this.pc.constraintVecSubsets(i,:);
-            cmtx    = this.pc.cmtx;
-            Ax  = cmtx * x;
-            AxR = Ax( rng );
+            rng  = this.pc.constraintVecSubsets(i,:);
+            cmtx = this.pc.cmtx;
+            Ax   = cmtx * x;
+            AxR  = Ax( rng );
             
             if( var( AxR ) < 0.0001 )
                 AxR = AxR + 0.0001.*randn(size(AxR));
             end
-
-
+            
             idx = [];
             model = [];
             curdist = Inf;
             for n = 1:this.numDict
 
-                bexp = [this.D2d(n,:)]';
+                bexp = this.D2d(n,:)';
 %                 if( length( bexp ) ~= length( AxR ))
 %                     bexp = bexp( rng );
 %                 end
@@ -731,7 +744,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     idx   = n;
                     curdist = dist;
                     if( ~isempty(this.intXfmModelType))
-                        model = this.model;
+                        model = this.paramModels;
                     end
                     if( ~doBest )
                         return;
@@ -954,7 +967,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             DiniHR = zeros( Nini, prod(outSz));
             for i = 1:Nini
                 imtmp = reshape( DiniLR( i, :), iniSz );
-                im_re = upsampleObservationForIni( imtmp, iniSz(1), dsFactor, interpOpts{:} );
+                im_re = upsampleObservationForIni( imtmp, iniSz, dsFactor, interpOpts{:} );
                 DiniHR(i,:) = im_re(:); 
             end
         end
