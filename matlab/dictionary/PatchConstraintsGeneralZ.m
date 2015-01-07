@@ -81,6 +81,13 @@ classdef PatchConstraintsGeneralZ < PatchConstraints
             this.cmtxInv = pinv( this.cmtx );
         end
         
+        function msk = planeMaskI( this, i, centered )
+            if( ~exist('centered','var'))
+                centered = [];
+            end
+            msk = this.planeMask( this.dimXyzList(i,1), this.dimXyzList(i,2:4), this.f, centered );
+        end
+        
         function im = planeMask( this, d, xyz, f, centered)
             
             sz2d = this.sz2d;

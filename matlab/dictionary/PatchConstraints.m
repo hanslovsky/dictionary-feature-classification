@@ -29,6 +29,8 @@ classdef PatchConstraints < handle
         overlappingPatches;
         overlappingFull = 1;
         % aBigNumber = 1000;
+        
+        doSparseCmtx = 0;
     end
    
     methods
@@ -451,6 +453,13 @@ classdef PatchConstraints < handle
             end
         end
         
+        function msk = planeMaskI( this, i, centered )
+            if( ~exist('centered','var'))
+                centered = [];
+            end
+            msk = this.planeMask( this.dimXyzList(i,1), this.dimXyzList(i,2), this.f, centered );
+        end
+        
         function msk = planeMask( this, xyz, n, f, centered )
         % n is {1,2,3}
         
@@ -524,9 +533,14 @@ classdef PatchConstraints < handle
         
         function projectX = patchProject( this, locIdx, x )
             if( ~isempty( this.cmtx ))
-                projectX = this.cmtx(locIdx,:) * x;
+                rng = this.constraintVecSubsets( locIdx, : );
+                projectX = this.cmtx(rng,:) * x;
             else
-                
+                msk = this.planeMaskI( locIdx );
+                projectX = zeros( this.sz2d );
+                for i = 1:prod( this.sz2d )
+                    projectX( i ) = sum( x( msk == i ));
+                end
             end
         end
     end
