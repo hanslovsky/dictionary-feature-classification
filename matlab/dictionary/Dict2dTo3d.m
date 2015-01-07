@@ -37,8 +37,6 @@ classdef Dict2dTo3d < handle
         
         % 
         p2dFill3d;
-        pairLocRng;
-        dimXyzList;
         
         allSims;
         
@@ -110,7 +108,7 @@ classdef Dict2dTo3d < handle
 
             half = (this.f - 1)./2;
 %             this.pairLocRng = (1+half) : this.f : this.sz3d(1);
-            this.pairLocRng = (1) : this.f : this.sz3d(1);
+            this.pc.pairLocRng = (1) : this.f : this.sz3d(1);
             
             % TODO - remove these eventually since the functionallity
             % is now the in the pc object
@@ -494,7 +492,8 @@ classdef Dict2dTo3d < handle
             for n = 1:numConstraints 
                  dim = dims(n);
                  xyz = xyzs(n);
-                 msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f, 0 );
+                 %msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f, 0 );
+                 msk = this.pc.planeMask( this, xyz, dim, this.f, 0 );
                  
                  thisConstraint = zeros( size(msk) );
                  dictElem = this.D2d( idxs(n), : );
@@ -654,7 +653,8 @@ classdef Dict2dTo3d < handle
                     idx = param.idx;
                     %pause;
                     
-                    msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
+                    %msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
+                    msk = this.pc.planeMask( this, xyz, dim, this.f);
                     
                     for j = 1:prod(this.sz2d)
                         cmtx( k, (msk == j) ) = 1;
@@ -953,14 +953,16 @@ classdef Dict2dTo3d < handle
             [d,xyz] = ind2sub( size( patchIdxs ), find( patchIdxs > 0 ));
             for i = 1:length(xyz)
                 patch = reshape( this.D2d( patchIdxs(d(i),xyz(i)), : ), this.sz2d );
-                constraints( Dict2dTo3d.planeMask( szdown, xyz(i), d(i) )) = this.summer2Dxy( patch, this.f );
+                %constraints( Dict2dTo3d.planeMask( szdown, xyz(i), d(i) )) = this.summer2Dxy( patch, this.f );
+                constraints( this.pc.planeMask( szdown, xyz(i), d(i) )) = this.summer2Dxy( patch, this.f );
             end
         end
         
         function c = collectConstraints( this, constraints, xyz, d )
             szSm3 = this.sz3d ./ this.f;
             szSm2 = this.sz2d ./ this.f;
-            planeMask = Dict2dTo3d.planeMask( szSm3, xyz, d );
+            %planeMask = Dict2dTo3d.planeMask( szSm3, xyz, d );
+            planeMask = this.pc.planeMask( szSm3, xyz, d );
             c = reshape( constraints( planeMask ), szSm2 );
         end
         
@@ -1048,7 +1050,8 @@ classdef Dict2dTo3d < handle
                 thisidx = thisNode.getData().idx;
                 
                 % TODO - dont recompute this msk every time
-                msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+                %msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+                msk = this.planeMask( thisxyz, thisdim, this.f );
             
                 for j = 1:patchNumElem
                     
@@ -1103,17 +1106,18 @@ classdef Dict2dTo3d < handle
             cost = max( similarityList );
         end
        
-            
+        function [ sim, x, cmtx, b, pm1, pm2, overlap ] = patchSimilarity( this, p1, xyz1, n1, p2, xyz2, n2 )
         % TODO make this methods abstract when more possibilities are available
         % this version will use unconstrained linear least squares 
-        function [ sim, x, cmtx, b, pm1, pm2, overlap ] = patchSimilarity( this, p1, xyz1, n1, p2, xyz2, n2 )
             
             % get the value of the sum-contraint each patch describes over
             % the overlapping area
             sz3 = this.sz3d;
 
-            pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
-            pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+            %pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
+            %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+            pm1 = this.pc.planeMask( sz3, xyz1, n1, this.f );
+            pm2 = this.pc.planeMask( sz3, xyz2, n2, this.f );
             overlap = (pm1 > 0) & (pm2 > 0);
            
             [cmtx1, b1] = Dict2dTo3d.contraintsFromMask( p1, overlap, pm1 );
@@ -1170,8 +1174,10 @@ classdef Dict2dTo3d < handle
                        continue; 
                     end
                     
-                    pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
-                    pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+                    %pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
+                    %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+                    pm1 = this.pc.planeMask( sz3, xyz1, n1, this.f );
+                    pm2 = this.pc.planeMask( sz3, xyz2, n2, this.f );
                     overlap = (pm1 > 0) & (pm2 > 0);
                     
                     [ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
@@ -1251,8 +1257,10 @@ classdef Dict2dTo3d < handle
                        continue; 
                     end
                     
-                    pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
-                    pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+                    %pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
+                    %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
+                    pm1 = this.pc.planeMask( sz3, xyz1, n1, this.f );
+                    pm2 = this.pc.planeMask( sz3, xyz2, n2, this.f );
                     overlap = (pm1 > 0) & (pm2 > 0);
                     
                     [ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
@@ -1540,9 +1548,11 @@ classdef Dict2dTo3d < handle
         function [msk,d] = planeIntersections( sz, xyz1, n1, xyz2, n2 )
         %function [msk,d,ix,iy,iz] = planeIntersections( sz, xyz1, n1, xyz2, n2 )
             
-            msk1 = Dict2dTo3d.planeMask( sz, xyz1, n1);
-            msk2 = Dict2dTo3d.planeMask( sz, xyz2, n2);
-            msk = msk1 & msk2;
+            %msk1 = Dict2dTo3d.planeMask( sz, xyz1, n1);
+            %msk2 = Dict2dTo3d.planeMask( sz, xyz2, n2);
+            msk1 = this.pc.planeMask( sz, xyz1, n1);
+            msk2 = this.pc.planeMask( sz, xyz2, n2);
+            msk = (msk1 > 0) & (msk2 > 0);
 
             if( nargout == 1)
                 return;
@@ -1565,95 +1575,16 @@ classdef Dict2dTo3d < handle
 
         function line = patchIntersectionFromMask( patch, xyz, n, msk )
             sz = size( msk );
-            pmsk = Dict2dTo3d.planeMask( sz, xyz, n );
+            %pmsk = Dict2dTo3d.planeMask( sz, xyz, n );
+            pmsk = this.pc.planeMask( sz, xyz, n );
             line = patch( msk( pmsk )); 
         end
         
         function I = fill3dWith2d( sz3d, dim, xyz, f, patch)
             I = zeros( sz3d );
-            msk = Dict2dTo3d.planeMaskF( sz3d, xyz, dim, f);
+            %msk = Dict2dTo3d.planeMaskF( sz3d, xyz, dim, f);
+            msk = this.pc.planeMaskF( sz3d, xyz, dim, f);
             I( msk > 0 ) = patch( msk(msk>0) );
-        end
-        
-        % n is {1,2,3}
-        function msk = planeMask( sz, xyz, n )
-            msk = false( sz );
-            
-            if( isscalar(xyz) )
-                val = xyz;
-            else
-                switch n
-                    case 1
-                        val = xyz(1);
-                    case 2
-                        val = xyz(2);
-                    case 3
-                        val = xyz(3);
-                    otherwise
-                        error('invalid normal direction');
-                end
-            end
-            
-            switch n
-               case 1
-                   msk( val, :, : ) = true;
-               case 2
-                   msk( :, val, : ) = true;
-               case 3
-                   msk( :, :, val ) = true;
-               otherwise 
-                   error('invalid normal direction');
-            end
-        end
-        
-        % n is {1,2,3}
-        function msk = planeMaskF( sz, xyz, n, f, centered )
-            
-            msk = zeros( sz );
-            
-            if( ~exist('centered','var') || isempty( centered ))
-               centered = false; 
-            end
-            
-            if( isscalar(xyz) )
-                val = xyz;
-            else
-                switch n
-                    case 1
-                        val = xyz(1);
-                    case 2
-                        val = xyz(2);
-                    case 3
-                        val = xyz(3);
-                    otherwise
-                        error('invalid normal direction');
-                end
-            end
-            
-            if( centered )
-                half = (f-1)./2;
-                rng = val-half : val+half;
-            else
-                rng = val : val + f - 1;
-            end
-            
-            valid = (rng>0) & (rng<=sz(1));
-            rng = rng( valid );
-
-            N = prod(sz(1:2));
-            
-            v = repmat( reshape(1:N, sz(1:2)), [1 1 nnz(valid)]);
-            
-            switch n
-                case 1
-                    msk( rng, :, : ) = permute(v, [3 1 2]);
-                case 2
-                    msk( :, rng, : ) = permute(v, [1 3 2]);
-                case 3
-                    msk( :, :, rng ) = v;
-                otherwise
-                    error('invalid normal direction');
-            end
         end
         
         % Deprecated

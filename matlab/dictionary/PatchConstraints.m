@@ -109,7 +109,7 @@ classdef PatchConstraints < handle
                 this.constraintVecSubsets( i , rng ) = true;
                 
                 % TODO - dont recompute this msk every time
-                msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+                msk = this.planeMask( thisxyz, thisdim, this.f );
                 this.overlapFraction( i ) = nnz( msk ) ./ ( patchNumElem .* this.f );
                 for j = 1:patchNumElem
                     
@@ -451,9 +451,56 @@ classdef PatchConstraints < handle
             end
         end
         
-    end
-    
-    methods( Access = protected )
+        function msk = planeMask( this, xyz, n, f, centered )
+        % n is {1,2,3}
+        
+            sz = this.sz3d;
+            msk = zeros( sz );
+            
+            if( ~exist('centered','var') || isempty( centered ))
+               centered = false; 
+            end
+            
+            if( isscalar(xyz) )
+                val = xyz;
+            else
+                switch n
+                    case 1
+                        val = xyz(1);
+                    case 2
+                        val = xyz(2);
+                    case 3
+                        val = xyz(3);
+                    otherwise
+                        error('invalid normal direction');
+                end
+            end
+            
+            if( centered )
+                half = (f-1)./2;
+                rng = val-half : val+half;
+            else
+                rng = val : val + f - 1;
+            end
+            
+            valid = (rng>0) & (rng<=sz(1));
+            rng = rng( valid );
+
+            N = prod(sz(1:2));
+            
+            v = repmat( reshape(1:N, sz(1:2)), [1 1 nnz(valid)]);
+            
+            switch n
+                case 1
+                    msk( rng, :, : ) = permute(v, [3 1 2]);
+                case 2
+                    msk( :, rng, : ) = permute(v, [1 3 2]);
+                case 3
+                    msk( :, :, rng ) = v;
+                otherwise
+                    error('invalid normal direction');
+            end
+        end
         
         function iniLocs( this )
             % Initialize Location parameters 
@@ -474,9 +521,98 @@ classdef PatchConstraints < handle
             this.numConstraints = prod( this.sz2d ) *  this.numLocs;
             this.buildIntersectionList();
         end
+        
+        function projectX = patchProject( this, locIdx, x )
+            if( ~isempty( this.cmtx ))
+                projectX = this.cmtx(locIdx,:) * x;
+            else
+                
+            end
+        end
     end
     
     methods( Static )
+        
+        function msk = planeMaskStatic( sz, xyz, n )
+        % n is {1,2,3}
+            msk = false( sz );
+            
+            if( isscalar(xyz) )
+                val = xyz;
+            else
+                switch n
+                    case 1
+                        val = xyz(1);
+                    case 2
+                        val = xyz(2);
+                    case 3
+                        val = xyz(3);
+                    otherwise
+                        error('invalid normal direction');
+                end
+            end
+            
+            switch n
+               case 1
+                   msk( val, :, : ) = true;
+               case 2
+                   msk( :, val, : ) = true;
+               case 3
+                   msk( :, :, val ) = true;
+               otherwise 
+                   error('invalid normal direction');
+            end
+        end
+        
+        function msk = planeMaskFStatic( sz, xyz, n, f, centered )
+        % n is {1,2,3}
+        
+            msk = zeros( sz );
+            
+            if( ~exist('centered','var') || isempty( centered ))
+               centered = false; 
+            end
+            
+            if( isscalar(xyz) )
+                val = xyz;
+            else
+                switch n
+                    case 1
+                        val = xyz(1);
+                    case 2
+                        val = xyz(2);
+                    case 3
+                        val = xyz(3);
+                    otherwise
+                        error('invalid normal direction');
+                end
+            end
+            
+            if( centered )
+                half = (f-1)./2;
+                rng = val-half : val+half;
+            else
+                rng = val : val + f - 1;
+            end
+            
+            valid = (rng>0) & (rng<=sz(1));
+            rng = rng( valid );
+
+            N = prod(sz(1:2));
+            
+            v = repmat( reshape(1:N, sz(1:2)), [1 1 nnz(valid)]);
+            
+            switch n
+                case 1
+                    msk( rng, :, : ) = permute(v, [3 1 2]);
+                case 2
+                    msk( :, rng, : ) = permute(v, [1 3 2]);
+                case 3
+                    msk( :, :, rng ) = v;
+                otherwise
+                    error('invalid normal direction');
+            end
+        end
         
         function [ Hsub ] = fillInQuadConstraintTemplate( Htemplate, b )
             % Fills in the specific values of a submatrix given
