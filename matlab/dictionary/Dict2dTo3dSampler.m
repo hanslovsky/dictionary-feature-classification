@@ -58,6 +58,17 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 
         end
         
+        function obj = copy(this)
+            obj = Dict2dTo3dSampler( this.D2d, this.sz2d(1), this.f, ...
+                                     this.overlappingPatches, this.scaleByOverlap );
+            obj.sz3d = this.sz3d;
+            
+            obj.D3d = this.D3d;
+            obj.numDict3d = this.numDict3d;
+            
+            obj.clone( this );
+        end
+        
         function [ patchParams, iteration, costs ] = build3dPatchIni_old( this, iniPatch, locs )
         % [ patchParams, iteration, costs ] = build3dPatchIni( this, iniPatch, locs )
         % 
