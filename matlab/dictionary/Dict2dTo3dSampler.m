@@ -721,10 +721,19 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 doBest =1;
             end
             
-            rng  = this.pc.constraintVecSubsets(i,:);
-            cmtx = this.pc.cmtx;
-            Ax   = cmtx * x;
-            AxR  = Ax( rng );
+%             % v1
+%             rng  = this.pc.constraintVecSubsets(i,:);
+%             cmtx = this.pc.cmtx;
+%             Ax   = cmtx * x;
+%             AxR  = Ax( rng );
+
+%             % v2
+%             rng  = this.pc.constraintVecSubsets(i,:);
+%             cmtx = this.pc.cmtx(rng,:);
+%             AxR  = cmtx * x;
+
+%           % v3
+            AxR = this.pc.patchProject( i, x );
             
             if( var( AxR ) < 0.0001 )
                 AxR = AxR + 0.0001.*randn(size(AxR));

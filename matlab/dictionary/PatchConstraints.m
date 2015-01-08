@@ -531,16 +531,23 @@ classdef PatchConstraints < handle
             this.buildIntersectionList();
         end
         
-        function projectX = patchProject( this, locIdx, x )
+        function [projectX, msk] = patchProject( this, locIdx, x, toVec )
+            if( ~exist('toVec','var') || isempty( toVec ))
+                toVec = 1;
+            end
             if( ~isempty( this.cmtx ))
                 rng = this.constraintVecSubsets( locIdx, : );
                 projectX = this.cmtx(rng,:) * x;
             else
+%                 fprintf('patch projection on the fly\n');
                 msk = this.planeMaskI( locIdx );
                 projectX = zeros( this.sz2d );
                 for i = 1:prod( this.sz2d )
                     projectX( i ) = sum( x( msk == i ));
                 end
+            end
+            if( toVec )
+                projectX = projectX(:);
             end
         end
     end
