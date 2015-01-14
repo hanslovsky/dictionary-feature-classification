@@ -586,6 +586,50 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        function [ pv, patch ] = patchFromParamsCheap( this, paramsIn )
+            % computes an 'optimal' patch by estimating each pixel independently
+            % from the constraints on it
+            
+            if( isempty( paramsIn ))
+                patch = [];
+                pv = [];
+                return;
+            end
+            
+            cmtx = this.pc.cmtx;
+            cs   = sum( cmtx );
+            mnMtx = bsxfun( @rdivide, cmtx, cs );
+
+            docell = 0;
+            if( ~iscell( paramsIn ))
+                paramsList = { paramsIn };
+            else
+                docell = 1;
+                paramsList = paramsIn;
+                pv    = cell( length(paramsList), 1 );
+                patch = cell( length(paramsList), 1 );
+            end
+
+            for n = 1:length(paramsList)
+                
+                b = this.constraintValue( paramsList{n} );
+                pvTmp = mnMtx' * b;
+                
+                if( docell )
+                    pv{n} = pvTmp;
+                    if( nargout > 1 )
+                        patch{n} = reshape( pv{n}, this.sz3d );
+                    end
+                else
+                    pv = pvTmp;
+                    if( nargout > 1 )
+                        patch = reshape( pv, this.sz3d );
+                    end
+                end
+            end
+            
+        end
+       
         function [ pv, patch, cmtxi, b ] = patchFromParamsPre( this, splNodeIn )
             % Compute patch from parameters using a precomputed constraint
             % matrix from the PatchConstraints object
@@ -800,7 +844,6 @@ classdef Dict2dTo3d < handle
             
         end
         
-       
         function xyzn = randomFillOrderBlah( this )
             N = size( this.dimXyzList, 1 );
 
@@ -1238,7 +1281,6 @@ classdef Dict2dTo3d < handle
             end
             this.allSims = allSims;
         end
-        
         
         function allSims = specSimilaritiesFast( this, iprange, jprange )
             

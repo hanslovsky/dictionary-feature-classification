@@ -716,6 +716,44 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
         end
         
+        function [ patchParams, dists, modelList, f_out ] = fidIdxAndModel_dist( this, x, doBest )
+            global DICTPATH;
+            
+            num_jobs = this.pc.numLocs;
+            
+            patchParams = zeros( num_jobs, 1);
+            dists       = zeros( num_jobs, 1);
+            modelList   = cell( num_jobs, 1);
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 3; % fitIdxAndModel has 2 output args
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                repmat( {'this'}, num_jobs, 1), ...
+                repmat( {'fitIdxAndModel'}, num_jobs, 1), ...
+                repmat( {num_out_args}, num_jobs, 1), ...
+                num2cell( 1:num_jobs ), ...
+                repmat( {x}, num_jobs, 1), ...
+                repmat( {doBest}, num_jobs, 1), ...
+                };
+            
+            f_out = qsub_dist(fun, 1, use_gpu, ...
+                [], [], run_script, ...
+                varargin{:} );
+           
+            for i = 1:num_jobs
+                patchParams(i) = f_out{i}{1}{1};
+                dists(i)       = f_out{i}{1}{2};
+                modelList{i}   = f_out{i}{1}{3};
+            end
+            
+            
+        end
+        
         function [ idx, curdist, model ] = fitIdxAndModel( this, i, x, doBest )
             if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
                 doBest =1;
