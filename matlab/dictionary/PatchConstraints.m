@@ -15,6 +15,7 @@ classdef PatchConstraints < handle
         cmtx;     % the constraint matrix
         cmtxInv;  % pseudo-inverse of the constraint matrix
         locToConstraint;
+        constraintToHrLoc;
         
         subCmtxAndInvs;
         constraintVecXsectSubsets; %
@@ -79,14 +80,25 @@ classdef PatchConstraints < handle
             num = length( dim );
             idx = zeros( num, 1 );
             for i = 1:num
-                idx(i) = find( this.dimXyzList(:,1) == dim(i) & ...
-                               this.dimXyzList(:,2) == xyz(i) );
+                if( size( xyz, 2 ) > 1)
+                    idx(i) = find(  this.dimXyzList(:,1) == dim(i) & ...
+                                    this.dimXyzList(:,2) == xyz(i) & ...
+                                    this.dimXyzList(:,3) == xyz(i) & ...
+                                    this.dimXyzList(:,4) == xyz(i) );
+                else
+                    idx(i) = find(  this.dimXyzList(:,1) == dim(i) & ...
+                                    this.dimXyzList(:,2) == xyz(i) );
+                end
             end
         end
         
         function [dim,xyz] = locIdx2XyzDim( this, idx )
             dim = this.dimXyzList( idx, 1 );
-            xyz = this.dimXyzList( idx, 2 );
+            if( size( this.dimXyzList, 2 ) > 1)
+                xyz = this.dimXyzList( idx, 2:4 );
+            else
+                xyz = this.dimXyzList( idx, 2 );
+            end
         end
         
         function buildCmtx( this )
@@ -99,7 +111,7 @@ classdef PatchConstraints < handle
             this.cmtx = zeros( this.numConstraints, numVariables );
             this.locToConstraint = false( numPatchLocs, this.numConstraints );
             this.constraintVecSubsets = false( numPatchLocs, this.numConstraints );
-             
+            
             k = 1;
             for i = 1 : numPatchLocs
                 
@@ -198,10 +210,11 @@ classdef PatchConstraints < handle
             k = 1;
             for i = 1 : this.numLocs
                 
-                thisdim = this.dimXyzList(i,1);
-                thisxyz = this.dimXyzList(i,2);
-                
-                msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+%                 thisdim = this.dimXyzList(i,1);
+%                 thisxyz = this.dimXyzList(i,2);
+%                 msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+
+                msk = this.planeMaskI( i );
                 
                 for j = 1:patchNumElem
                     
@@ -457,7 +470,14 @@ classdef PatchConstraints < handle
             if( ~exist('centered','var'))
                 centered = [];
             end
-            msk = this.planeMask( this.dimXyzList(i,1), this.dimXyzList(i,2), this.f, centered );
+            msk = this.planeMask( this.dimXyzList(i,2), this.dimXyzList(i,1), this.f, centered );
+        end
+        
+        function msk = planeMaskLRI( this, i, centered )
+            if( ~exist('centered','var'))
+                centered = [];
+            end
+            msk = this.planeMaskLR( this.dimXyzList(i,2), this.dimXyzList(i,1), this.f, centered );
         end
         
         function msk = planeMask( this, xyz, n, f, centered )
@@ -509,6 +529,61 @@ classdef PatchConstraints < handle
                 otherwise
                     error('invalid normal direction');
             end
+        end
+        
+        function msk = planeMaskLR( this, xyz, n, f, centered )
+            sz = this.sz3d ./ [1 1 this.f ];
+            msk = zeros( sz );
+            
+            if( ~exist('centered','var') || isempty( centered ))
+                centered = false;
+            end
+            
+            if( isscalar(xyz) )
+                val = xyz;
+            else
+                switch n
+                    case 1
+                        val = xyz(1);
+                    case 2
+                        val = xyz(2);
+                    case 3
+                        val = xyz(3);
+                    otherwise
+                        error('invalid normal direction');
+                end
+            end
+            
+            if( centered )
+                half = (f-1)./2;
+                rng = val-half : val+half;
+            else
+                rng = val : val + f - 1;
+            end
+            valid = (rng>0) & (rng<=sz(1));
+            rng = rng( valid );
+            
+            if( n == 3 )
+                N = prod(sz(1:2));
+                rng = unique( ceil( rng ./ f ));
+                v = repmat( reshape(1:N, sz(1:2)), [1 1 length(rng)]);
+            else
+                tmpsz = sz([1 3]);
+                N = prod(tmpsz);
+                v = repmat( reshape(1:N, tmpsz), [1 1 length(rng)]);
+            end
+            
+            switch n
+                case 1
+                    msk( rng, :, : ) = permute(v, [3 1 2]);
+                case 2
+                    msk( :, rng, : ) = permute(v, [1 3 2]);
+                case 3
+                    msk( :, :, rng ) = v;
+                otherwise
+                    error('invalid normal direction');
+            end
+            
         end
         
         function iniLocs( this )

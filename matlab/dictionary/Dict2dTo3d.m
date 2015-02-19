@@ -79,6 +79,10 @@ classdef Dict2dTo3d < handle
             import net.imglib2.algorithms.patch.*;
             import java.util.*;
 
+            if( ~exist('scaleByOverlap', 'var') || isempty( scaleByOverlap ))
+                scaleByOverlap = 0;
+            end
+            
             this.D2d     = D2d;
             if( isempty( this.D2d ))
                 return;
@@ -106,9 +110,9 @@ classdef Dict2dTo3d < handle
 %             this.sums2d = Dict2dTo3d.allSums( this.D2d, this.sz2d, this.f);
 %             this.summer2Dxy = Tid.sum2dxy();
 
-            half = (this.f - 1)./2;
+%             half = (this.f - 1)./2;
 %             this.pairLocRng = (1+half) : this.f : this.sz3d(1);
-            this.pc.pairLocRng = (1) : this.f : this.sz3d(1);
+%             this.pc.pairLocRng = (1) : this.f : this.sz3d(1);
             
             % TODO - remove these eventually since the functionallity
             % is now the in the pc object
@@ -596,6 +600,9 @@ classdef Dict2dTo3d < handle
                 return;
             end
             
+            if( isempty( this.pc.cmtx ))
+                this.pc.buildCmtx();
+            end
             cmtx = this.pc.cmtx;
             cs   = sum( cmtx );
             mnMtx = bsxfun( @rdivide, cmtx, cs );
@@ -800,12 +807,12 @@ classdef Dict2dTo3d < handle
                 if( docell )
                     pv{n} = pvtmp;
                     if( doReshape )
-                        patch{n} = reshape( pvtmp, this.sz3d );
+                        patch{n} = reshape( pvtmp(this.pc.numLocs+1:end), this.sz3d );
                     end
                 else
                     pv = pvtmp;
                     if( doReshape )
-                        patch = reshape( pv, this.sz3d );
+                        patch = reshape( pv(this.pc.numLocs+1:end), this.sz3d );
                     end
                 end
                 

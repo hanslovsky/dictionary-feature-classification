@@ -31,7 +31,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 
 %        updateOrder = 'all';
        updateOrder = 'each';
-       
+       verboseEvery=100;
     end
     
     properties( SetAccess = protected )
@@ -642,7 +642,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end % while
         end
         
-        function [ paramList, modelList, pvList ] = fitParamsToHR_dist( this, ini, doPatchEst, constrainScalesPos, constrainHrMinMax  )
+        function [ paramList, modelList, pvList, patchList ] = fitParamsToHR_dist( this, ini, doPatchEst, constrainScalesPos, constrainHrMinMax  )
             global DICTPATH;
             
             if( ~exist( 'doPatchEst', 'var' ) || isempty( doPatchEst ))
@@ -664,7 +664,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             fun = @run_obj_method_dist;
             use_gpu = 0;
-            num_out_args = 3; % fitParamsToHR has 2 output args
+            num_out_args = 4; % fitParamsToHR has 4 output args
             run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
             
             varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
@@ -683,19 +683,22 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
             paramList = cell( num_jobs, 1 );
             modelList = cell( num_jobs, 1 );
-            pvList = cell( num_jobs, 1 );
+            pvList    = cell( num_jobs, 1 );
+            patchList = cell( num_jobs, 1 );
             for i = 1:size(f_out,1)
                 paramList{i} = f_out{i}{1}{1};
                 modelList{i} = f_out{i}{1}{2};
                 pvList{i}    = f_out{i}{1}{3};
+                patchList{i} = f_out{i}{1}{4};
             end
             
         end
         
-        function [ patchParams, modelList, pv ] = fitParamsToHR( this, x, doPatchEst, constrainScalesPos, constrainHrMinMax )
+        function [ patchParams, modelList, pv, patch ] = fitParamsToHR( this, x, doPatchEst, constrainScalesPos, constrainHrMinMax )
             patchParams = zeros( this.pc.numLocs, 1 );
             modelList   = cell ( this.pc.numLocs, 1 );
             pv = [];
+            patch = [];
             
             x = vecToRowCol( x, 'col');
             for j = 1:this.pc.numLocs
@@ -712,11 +715,15 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
             
             if( doPatchEst )
-               [ pv ] = this.patchFromParamsScale( patchParams, constrainScalesPos, constrainHrMinMax  );
+                if( nargout >= 4 )
+                    [ pv, patch ] = this.patchFromParamsScale( patchParams, constrainScalesPos, constrainHrMinMax  );
+                else
+                    [ pv ] = this.patchFromParamsScale( patchParams, constrainScalesPos, constrainHrMinMax  );
+                end
             end
         end
         
-        function [ patchParams, dists, modelList, f_out ] = fidIdxAndModel_dist( this, x, doBest )
+        function [ patchParams, dists, modelList, f_out ] = fitIdxAndModel_dist( this, x, doBest )
             global DICTPATH;
             
             num_jobs = this.pc.numLocs;
@@ -781,7 +788,9 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             model = [];
             curdist = Inf;
             for n = 1:this.numDict
-
+                if( mod( n, this.verboseEvery) == 0 )
+                    fprintf(' Dict2dTo3dSampler.fitIdxAndModel %d of %d\n', n, this.numDict);
+                end
                 bexp = this.D2d(n,:)';
 %                 if( length( bexp ) ~= length( AxR ))
 %                     bexp = bexp( rng );
@@ -802,7 +811,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     idx   = n;
                     curdist = dist;
                     if( ~isempty(this.intXfmModelType))
-                        model = this.paramModels;
+                        model = thismodel;
                     end
                     if( ~doBest )
                         return;
