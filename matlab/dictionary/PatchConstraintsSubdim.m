@@ -37,6 +37,7 @@ classdef PatchConstraintsSubdim < PatchConstraints
             this.numConstraints = prod( this.sz2d ) *  this.numLocs;
         end
         
+        
     end
     
 end

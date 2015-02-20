@@ -761,10 +761,15 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
         end
         
-        function [ idx, curdist, model ] = fitIdxAndModel( this, i, x, doBest )
+        function [ idx, curdist, models ] = fitIdxAndModel( this, i, x, doBest, returnList )
             if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
                 doBest =1;
             end
+            if( ~exist( 'returnList', 'var' ) || isempty( returnList ))
+                returnList = false;
+            end
+            returnList
+            doBest
             
 %             % v1
 %             rng  = this.pc.constraintVecSubsets(i,:);
@@ -784,13 +789,25 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 AxR = AxR + 0.0001.*randn(size(AxR));
             end
             
-            idx = [];
-            model = [];
+            if( returnList )
+                distList = zeros( this.numDict, 1 );
+                if( ~isempty(this.intXfmModelType))
+                    models = cell( this.numDict, 1 );
+                else
+                    models = [];
+                end
+            else
+                idx = [];
+                models = [];
+            end
             curdist = Inf;
+            
             for n = 1:this.numDict
+                
                 if( mod( n, this.verboseEvery) == 0 )
                     fprintf(' Dict2dTo3dSampler.fitIdxAndModel %d of %d\n', n, this.numDict);
                 end
+                
                 bexp = this.D2d(n,:)';
 %                 if( length( bexp ) ~= length( AxR ))
 %                     bexp = bexp( rng );
@@ -807,18 +824,33 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     dist = norm( AxR - bexp );
                 end
                 
-                if( (dist < curdist) )
+                if( returnList )
+                    distList( n ) = dist;
+                     if( ~isempty(this.intXfmModelType))
+                        models{ n } = thismodel;
+                     end
+                elseif( (dist < curdist) )
                     idx   = n;
                     curdist = dist;
-                    if( ~isempty(this.intXfmModelType))
-                        model = thismodel;
+                    if( ~isempty(this.intXfmModelType) )
+                        models = thismodel;
                     end
                     if( ~doBest )
                         return;
                     end
                 end
                 
+                distList 
             end
+            
+            if( returnList )
+                [ distList, idx ] = sort( distList );
+                curdist = distList;
+                if( ~isempty(this.intXfmModelType))
+                    models = models( idx );
+                end
+            end
+            
         end
 
         function [ idx, dist, modelList ] = goodPatchConfigModel( this, b, iList, doBest )

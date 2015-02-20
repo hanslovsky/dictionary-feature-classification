@@ -101,7 +101,12 @@ classdef PatchConstraints < handle
             end
         end
         
-        function buildCmtx( this )
+        function buildCmtx( this, doInv )
+            
+            if( ~exist('doInv','var') || isempty( doInv ))
+                doInv = true;
+            end
+            
             patchNumElem = prod( this.sz2d );
             numVariables = prod( this.sz3d );
             
@@ -138,8 +143,9 @@ classdef PatchConstraints < handle
                     k = k + 1;
                 end
             end
-            
-            this.cmtxInv = pinv( this.cmtx );
+            if( doInv )
+                this.cmtxInv = pinv( this.cmtx );
+            end
         end
                
         function [ H, f, A, bineq, Aeq, beq, lb, ub ] = buildQuadProg( this, b, constrainScalesPos, ...
@@ -625,6 +631,16 @@ classdef PatchConstraints < handle
                 projectX = projectX(:);
             end
         end
+        
+        function [ dict_ds ] = downsample2dDictByDimSlow( this, D2d )
+            dict_ds = zeros( size( D2d )./[ 1 this.f] );
+            for i = 1 : size( D2d, 1 )
+                d = reshape( D2d(i,:), this.sz2d );
+                ddown = reshape( mean( reshape(d', this.f,[]),1), this.sz2d./ [this.f 1] )';
+                dict_ds( i, : ) = ddown(:);
+            end
+        end
+        
     end
     
     methods( Static )
@@ -735,5 +751,30 @@ classdef PatchConstraints < handle
             Htemplate( 1, 1)   = -2;  % the scale-scale element is different
             Htemplate( 2:end, 2:end ) = 1; % the pixel-pixel interaction
         end
+        
+        % TODO 
+%         function [ im_ds ] = downsampleIdxs( sz, msk )
+%             idxs = zeros( sz );
+%             
+%         end
+        
+        function [ im_ds ] = downsampleByMaskDim( im, msk )
+            
+            [i,j,~]=ind2sub( size(msk), find(msk==1));
+            if( any( i>1 ) )
+                dim = 1;
+            elseif( any( j>1) )
+                dim = 2;
+            else
+                dim = 3;
+            end
+            reshapeSz = size(msk);
+            reshapeSz( dim ) = length( i );
+            im_ds = mean( reshape( im(msk>0), reshapeSz ), dim );
+        end
+        
+%         function [ im_ds ] = downsampleByMaskGenVec( im, msk )
+%             idxList = unique(msk(msk>0));
+%         end
     end
 end
