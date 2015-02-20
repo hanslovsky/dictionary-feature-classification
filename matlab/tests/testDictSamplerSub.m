@@ -66,14 +66,17 @@ for i = 1 : 3
     
 end
 
+%% test solveHR
+
+
 %% test bestKdicts on HR observation
 
-i = 7;
-x = rand( 9*9*9, 1 );
-
-% this, i, x, doBest, returnList )
-[ dictIdxs, dictCosts, models ] = d23.fitIdxAndModel( i, x(:), 0, 1 );
-dictIdxs
+% i = 7;
+% x = rand( 9*9*9, 1 );
+% 
+% % this, i, x, doBest, returnList )
+% [ dictIdxs, dictCosts, models ] = d23.fitIdxAndModel( i, x(:), 0, 1 );
+% dictIdxs
 
 %%
 % pc = d23.pc

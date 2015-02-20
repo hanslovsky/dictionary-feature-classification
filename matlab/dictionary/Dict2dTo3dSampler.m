@@ -768,8 +768,6 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             if( ~exist( 'returnList', 'var' ) || isempty( returnList ))
                 returnList = false;
             end
-            returnList
-            doBest
             
 %             % v1
 %             rng  = this.pc.constraintVecSubsets(i,:);
@@ -840,7 +838,6 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                     end
                 end
                 
-                distList 
             end
             
             if( returnList )

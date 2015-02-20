@@ -112,11 +112,11 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             end
             
            % now do the rest
-           for j = length( zIndices )+1 : d23.pc.numLocs
+           for j = length( zIndices )+1 : this.pc.numLocs
               
-               [ dictIdxs, ~, models ] = this.bestKdicts( j, pv, 0 );
+               [ dictIdxs, ~, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
                
-               patchParams(k,:) = dictIdxs;
+               patchParams( j, : ) = dictIdxs(1:K);
                
                if( ~isempty(this.intXfmModelType))
                    modelList{ j, : } = models;
