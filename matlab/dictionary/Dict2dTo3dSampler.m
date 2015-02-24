@@ -841,6 +841,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
             
             if( returnList )
+                fprintf('sorting output to fitIdxAndModel\n');
                 [ distList, idx ] = sort( distList );
                 curdist = distList;
                 if( ~isempty(this.intXfmModelType))
@@ -1032,17 +1033,21 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             [ ~, bestidx ] = min( sims );
         end
     
-        function b = constraintValue( this, obj )
+        function b = constraintValue( this, obj, models )
+            if( ~exist('models','var'))
+                models = {};
+            end
+            
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
-                b = this.pc.constraintValueNode( this.D2d, obj );
+                b = this.pc.constraintValueNode( this.D2d, obj, models );
             else
-                b = this.pc.constraintValueList( this.D2d, obj );
+                b = this.pc.constraintValueList( this.D2d, obj, models );
             end
             
             if( ~isempty( this.intXfmModelType ))
                 for i = 1:this.pc.numLocs
                     rng = this.pc.constraintVecSubsets(i,:); 
-                    b( rng ) = feval(this.paramModels{i}, b( rng ));
+                    b( rng ) = feval(models{i}, b( rng ));
                 end
             end
             if( this.scaleDictElems )

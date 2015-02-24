@@ -582,11 +582,14 @@ classdef Dict2dTo3d < handle
             
         end
 
-        function [ pv, patch, cmtx, b ] = patchFromParams( this, nodeOrList )
+        function [ pv, patch, cmtx, b ] = patchFromParams( this, nodeOrList, models )
+            if( ~exist('models','var'))
+            	models = d23.paramModels;
+            end
             if( ~isempty(this.pc))
-                [ pv, patch, cmtx, b ] = patchFromParamsPre( this, nodeOrList);
+                [ pv, patch, cmtx, b ] = patchFromParamsPre( this, nodeOrList, models );
             else
-                [ pv, patch, cmtx, b ] = patchFromParamsComp( this, nodeOrList);
+                [ pv, patch, cmtx, b ] = patchFromParamsComp( this, nodeOrList, models);
             end
         end
         
@@ -637,11 +640,15 @@ classdef Dict2dTo3d < handle
             
         end
        
-        function [ pv, patch, cmtxi, b ] = patchFromParamsPre( this, splNodeIn )
+        function [ pv, patch, cmtxi, b ] = patchFromParamsPre( this, splNodeIn, models )
             % Compute patch from parameters using a precomputed constraint
             % matrix from the PatchConstraints object
             
-            fprintf('patch from precomputed constraints\n');
+            if( ~exist('models','var'))
+                models = {};
+            end
+            
+            %fprintf('patch from precomputed constraints\n');
             if( isempty( splNodeIn ))
                 patch = [];
                 pv = [];
@@ -662,7 +669,7 @@ classdef Dict2dTo3d < handle
             
             for n = 1:length(splNodeList)
                 splNode = splNodeList{ n };
-                b = this.constraintValue( splNode );
+                b = this.constraintValue( splNode, models );
                 
                 if( docell )
                     pv{n} = cmtxi * b;
@@ -1421,11 +1428,11 @@ classdef Dict2dTo3d < handle
             
         end
         
-        function b = constraintValue( this, obj )
+        function b = constraintValue( this, obj, model )
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
-                b = this.pc.constraintValueNode( this.D2d, obj );
+                b = this.pc.constraintValueNode( this.D2d, obj, model );
             else
-                b = this.pc.constraintValueList( this.D2d, obj );
+                b = this.pc.constraintValueList( this.D2d, obj, model );
             end
         end
     end

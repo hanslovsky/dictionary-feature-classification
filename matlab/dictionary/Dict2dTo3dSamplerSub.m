@@ -55,13 +55,14 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             end
             
 %             fprintf('length x: %d\n', length(x));
-            
+
+            this.intXfmModelType
             if( ~isempty(this.intXfmModelType))
                 models = cell( this.numDict, 1 );
                 for n = 1 : this.numDict
-                    bexp      = D(n,:)';
-                    models{n} = fit( bexp, x, this.intXfmModelType );
-                    dists(n)  = norm( x - feval( thismodel, bexp ) );
+                    bexp      = D(n,:);
+                    models{n} = fit( bexp', x', this.intXfmModelType, 'Robust', 'LAR' );
+                    dists(n)  = norm( x' - feval( models{n}, bexp' ) );
                 end
             else
                 dists = pdist2( x, D );
@@ -76,8 +77,12 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 models = models( is(1:K) );
             end
         end
-        
-        function [ patchParams, modelList, pv, patch ] = solveHR( this, x, K )
+            
+        function [ patchParams, modelList, pv, patch ] = solveBestK( this, x, K )
+            % Solve for patch parameters from an observation x by:
+            %   1)  solving for 2d patches that fit z-plane sub patches
+            %       - because 
+            
             patchParams = zeros( this.pc.numLocs, K );
             modelList   = cell ( this.pc.numLocs, K );
             pv = zeros( prod(this.pc.sz3d), 1);
@@ -99,34 +104,141 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 patchParams(k,:) = dictIdxs;
                 
                 if( ~isempty(this.intXfmModelType))
-                    modelList{ j, : } = models;
+                    modelList( j, : ) = models;
                 end
                 
                 mskHR = this.pc.planeMaskI( j );
-                nnz(msk > 0)
+                %nnz(msk > 0)
                 length( this.D2d( dictIdxs, :))
-                 
+                
                 % build initial high-res patch
                 pv( mskHR > 0 ) = repmat( this.D2d( dictIdxs(1), :), [1 1 this.f]);
                 
             end
             
-           % now do the rest
-           for j = length( zIndices )+1 : this.pc.numLocs
-              
-               [ dictIdxs, ~, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
-               
-               patchParams( j, : ) = dictIdxs(1:K);
-               
-               if( ~isempty(this.intXfmModelType))
-                   modelList{ j, : } = models;
-               end
-           end
+            % now do the rest
+            for j = length( zIndices )+1 : this.pc.numLocs
+                
+                fprintf('fitting model for location %d of %d\n', ...
+                    j, this.pc.numLocs );
+                
+                [ dictIdxs, ~, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
+                
+                patchParams( j, : ) = dictIdxs(1:K);
+                
+                if( ~isempty(this.intXfmModelType))
+                    modelList( j, : ) = models( 1:K );
+                end
+            end
             
-            
+            if( nargout > 3 )
+                patch = reshape( pv, this.sz3d );
+            end
             
             
         end
+        
+        function [ bestPatchParams, currentModels, pvOut ] = greedySubSearch( this, x, iniPatchParams, iniModels,...
+                maxOuterIters, maxNoChangeIters )
+            
+            if( ~exist('maxOuterIters','var') || isempty(maxOuterIters))
+                maxOuterIters = 200;
+            end
+            if( ~exist('maxNoChangeIters','var') || isempty(maxNoChangeIters))
+                maxNoChangeIters = 20;
+            end
+            
+            [ numLocs, K ] = size( iniPatchParams );
+            
+            if( numLocs ~= this.pc.numLocs )
+                error('number of rows of iniPatchParams must equal this.pc.numLocs');
+            end
+            
+            currentParams = iniPatchParams( :, 1 );
+            currentModels = iniModels( :, 1 );
+            
+            [ pv ] = this.patchFromParams( currentParams, currentModels );
+            currentCost = norm( pv - x );
+            
+            numUnchanged = 0;
+            for outeriter = 1:maxOuterIters
+                
+                fprintf('iteration %d of %d\n', outeriter, maxOuterIters );
+                
+                % shuffle order to optimize locations
+                innerList = randperm( numLocs );
+                
+                % loop over locations
+                changed = false;
+                for i = 1:numLocs
+                    j = innerList( i );
+                    
+                    % loop over the K possible patches at location j
+                    
+                    bestPatchIdx = currentParams( j );
+                    tmpParams = currentParams;
+                    tmpModels = currentModels;
+                    
+                    changedInner = false;
+                    for k = setdiff( 1:K, find( iniPatchParams(j,:) == bestPatchIdx) )
+                        
+                        currentIdx = iniPatchParams( j, k );
+                        % diff for debug only
+%                         diff = zeros( size( tmpParams ));
+%                         diff( j ) = 1;
+                        
+                        tmpParams( j ) = currentIdx;
+                        tmpModels{ j } = iniModels{ j, k };
+%                         [ tmpParams diff ]
+%                         pause;
+                        
+                        %thismodel = fit( bexp, AxR, this.intXfmModelType );
+                        
+                        [ pv_tmp ] = this.patchFromParams( tmpParams, tmpModels );
+                        cost = norm( pv_tmp - x );
+                            
+                        if( cost < currentCost )
+
+%                             fprintf( 'old %f vs new %f costs at location %d\n', ...
+%                                             currentCost, cost );
+                            if( cost < currentCost )
+                                fprintf( 'cost improved from %f to %f at location %d\n', ...
+                                            currentCost, cost );
+                                changedInner = true;
+                                currentCost = cost;
+                            end
+                            
+                        end
+                    end % parameters
+                    
+                    if( changedInner )
+                        currentParams = tmpParams;
+                        currentModels = tmpModels;
+                        changed = true;
+                    end
+                    
+                end % inner loop
+                
+                % increment changed counter
+                if( changed )
+                    numUnchanged = 0;
+                else
+                    numUnchanged = numUnchanged + 1;
+                end
+                
+                % nothing has changed for awhile, so break early
+                if( numUnchanged > maxNoChangeIters )
+                    fprintf( 'no change, breaking early\n');
+                    break;
+                end
+                
+            end % outer loop
+            
+            bestPatchParams = currentParams;
+            pvOut = this.patchFromParams( bestPatchParams, models );
+            
+        end % greedySubSearch
+       
         
     end  % methods
     

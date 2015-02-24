@@ -356,16 +356,20 @@ classdef PatchConstraints < handle
                              
         end
            
-        function b = constraintValue( this, patchMtx, obj )
+        function b = constraintValue( this, patchMtx, obj, model )
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
-                b = this.constraintValueNode( patchMtx, obj );
+                b = this.constraintValueNode( patchMtx, obj, model );
             else
-                b = this.constraintValueList( patchMtx, obj );
+                b = this.constraintValueList( patchMtx, obj, model );
             end
         end
         
-        function b = constraintValueNode( this, patchMtx, node )
+        function b = constraintValueNode( this, patchMtx, node, model )
             
+            if( ~exist( 'model','var') )
+                model = [];
+            end
+                
             patchNumElem = prod( this.sz2d ); % num constraints per patch
             depth = node.getDepth();
             b = zeros( patchNumElem * (depth+1), 1 );
@@ -379,8 +383,11 @@ classdef PatchConstraints < handle
                 start = patchNumElem * (j - 1) + 1;
                 rng = start : start + patchNumElem - 1;
 
-                b( rng ) = patchMtx( idx, : );
-
+                if( isempty( model ))
+                    b( rng ) = patchMtx( idx, : );
+                else
+                    b( rng ) = feval( model, patchMtx( idx, : ));
+                end
                 node = node.getParent();
             end
              
@@ -413,9 +420,13 @@ classdef PatchConstraints < handle
             
         end
             
-        function b = constraintValueList( this, patchMtx, idxList )
-        % idxList must be in the same order
-        
+        function b = constraintValueList( this, patchMtx, idxList, model )
+            % idxList must be in the same order
+            
+            if( ~exist( 'model','var') )
+                model = [];
+            end
+            
             if( islogical( idxList ))
                 idxList = find( idxList );
             end
@@ -435,21 +446,26 @@ classdef PatchConstraints < handle
             for i = 1:N
                 if( ndim <= 1)
                     % if idxList is a column vector, assume that
-                    % the indices are given in the same order as 
+                    % the indices are given in the same order as
                     % this.dimXyzList
                     idx =  idxList( i );
                 elseif( size( idxList, 2) == 3 )
                     j = this.locXyzDim2Idx( idxList(i,1), ...
-                                            idxList(i,2));
-                                        
+                        idxList(i,2));
+                    
                     idx = idxList( i, 3 );
                     
                     start = patchNumElem * (j - 1) + 1;
-                	brng = start : start + patchNumElem - 1;
+                    brng = start : start + patchNumElem - 1;
                     
                 end
                 
-                b(brng) = patchMtx( idx, : );
+                if( isempty( model ))
+                    b( brng ) = patchMtx( idx, : );
+                else
+                    b( brng ) = feval( model{i}, patchMtx( idx, : ));
+                end
+                
                 brng = brng + patchNumElem;
             end
         end
