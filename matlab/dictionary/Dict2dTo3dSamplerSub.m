@@ -20,7 +20,14 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             % sz  - size of 2d patches
             % f   - downsampling factor
             this = this@Dict2dTo3dSampler( D2d, sz, f, overlappingPatches, scaleByOverlap );
+            
             this.D2d_downsampled = this.pc.downsample2dDictByDimSlow( this.D2d );
+            
+            % normalize
+            this.D2d_downsampled = bsxfun(  @rdivide, ...
+                                            this.D2d_downsampled, ...
+                                            sqrt(sum( this.D2d_downsampled.^2, 2 ) ));
+            
             this.pc.buildCmtx();
         end
         
@@ -48,6 +55,9 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
 %             size(x)
             x = [x(:)]';
             
+            % normlize x
+            x = x ./ norm( x );
+            
             if( numel( x ) == size( this.D2d, 2 ) )
                D = this.D2d; 
             else
@@ -56,12 +66,13 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             
 %             fprintf('length x: %d\n', length(x));
 
-            this.intXfmModelType
+            % this.intXfmModelType
+            
             if( ~isempty(this.intXfmModelType))
                 models = cell( this.numDict, 1 );
                 for n = 1 : this.numDict
                     bexp      = D(n,:);
-                    models{n} = fit( bexp', x', this.intXfmModelType, 'Robust', 'LAR' );
+                    models{n} = fit( bexp', x', this.intXfmModelType, this.fitParams{:} );
                     dists(n)  = norm( x' - feval( models{n}, bexp' ) );
                 end
             else
@@ -78,12 +89,18 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             end
         end
             
-        function [ patchParams, modelList, pv, patch ] = solveBestK( this, x, K )
+        function [ patchParams, modelList, pv, patch ] = solveBestK( this, x, K, cutoffFun )
             % Solve for patch parameters from an observation x by:
             %   1)  solving for 2d patches that fit z-plane sub patches
             %       - because 
             
-            patchParams = zeros( this.pc.numLocs, K );
+            if( ~exist( 'cutoffFun', 'var'))
+                cutoffFun = [];
+            end
+            
+            % patchParams = zeros( this.pc.numLocs, K );
+            patchParams = cell( this.pc.numLocs, 1 );
+            
             modelList   = cell ( this.pc.numLocs, K );
             pv = zeros( prod(this.pc.sz3d), 1);
             
@@ -100,8 +117,13 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 fprintf('fitting model for location %d of %d\n', ...
                     j, this.pc.numLocs );
                 
-                [ dictIdxs, ~, models, msk ] = this.bestKdicts( x, j, K );
-                patchParams(k,:) = dictIdxs;
+                [ dictIdxs, dictCosts, models, msk ] = this.bestKdicts( x, j, K );
+                if( ~isempty( cutoffFun ))
+                    Kfun = cutoffFun( dictCosts, K );
+                    patchParams{k} = dictIdxs( 1:Kfun );
+                else
+                    patchParams{k} = dictIdxs;
+                end
                 
                 if( ~isempty(this.intXfmModelType))
                     modelList( j, : ) = models;
@@ -122,9 +144,15 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 fprintf('fitting model for location %d of %d\n', ...
                     j, this.pc.numLocs );
                 
-                [ dictIdxs, ~, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
+                [ dictIdxs, distList, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
                 
-                patchParams( j, : ) = dictIdxs(1:K);
+                if( ~isempty( cutoffFun ))
+                    Kfun = cutoffFun( distList, K );
+                    patchParams{ j } = dictIdxs( 1:Kfun );
+                else
+                    % patchParams( j, : ) = dictIdxs(1:K);
+                    patchParams{ j } = dictIdxs(1:K);
+                end
                 
                 if( ~isempty(this.intXfmModelType))
                     modelList( j, : ) = models( 1:K );
@@ -134,7 +162,6 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             if( nargout > 3 )
                 patch = reshape( pv, this.sz3d );
             end
-            
             
         end
         
@@ -154,7 +181,8 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 error('number of rows of iniPatchParams must equal this.pc.numLocs');
             end
             
-            currentParams = iniPatchParams( :, 1 );
+%             currentParams = iniPatchParams( :, 1 );
+            currentParams = cellfun( @(x)(x(1)), iniPatchParams );
             currentModels = iniModels( :, 1 );
             
             [ pv ] = this.patchFromParams( currentParams, currentModels );
@@ -173,14 +201,24 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 for i = 1:numLocs
                     j = innerList( i );
                     
-                    % loop over the K possible patches at location j
+                    % it is possible there is only one possible dictionary
+                    % element for location j.  if so, ski;
+                    if( length( iniPatchParams{j}) == 1 )
+                        continue;
+                    end
                     
-                    bestPatchIdx = currentParams( j );
+                    % loop over the K possible patches at location j
+                    if( iscell( currentParams) )
+                        bestPatchIdx = currentParams{ j };
+                    else
+                        bestPatchIdx = currentParams( j );
+                    end
+                    
                     tmpParams = currentParams;
                     tmpModels = currentModels;
                     
                     changedInner = false;
-                    for k = setdiff( 1:K, find( iniPatchParams(j,:) == bestPatchIdx) )
+                    for k = setdiff( 1:K, find( iniPatchParams{j} == bestPatchIdx) )
                         
                         currentIdx = iniPatchParams( j, k );
                         % diff for debug only
@@ -235,7 +273,7 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             end % outer loop
             
             bestPatchParams = currentParams;
-            pvOut = this.patchFromParams( bestPatchParams, models );
+            pvOut = this.patchFromParams( bestPatchParams, currentModels );
             
         end % greedySubSearch
        
@@ -254,4 +292,13 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
         end
     end % protected methods
     
+    methods( Static )
+        
+        function [ K ] = chooseCutoffInflection( dictCosts, L ) 
+            deriv = diff(dictCosts(1:L));
+            deriv2 = diff( deriv );
+%             K = find( (deriv(1:end-1) > 0) & (deriv2 < 0) , 1 );
+            K = find( (deriv2 < 0) , 1 );
+        end 
+    end
 end

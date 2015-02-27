@@ -22,6 +22,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
        intXfmModelType = '';
        paramModels;
        stopAfterFitParamIni = 1;
+       fitParams = { 'Robust', 'LAR' };
        
        scaleDictElems = 0;
        paramScales;
@@ -32,6 +33,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 %        updateOrder = 'all';
        updateOrder = 'each';
        verboseEvery=100;
+       
     end
     
     properties( SetAccess = protected )
@@ -816,7 +818,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 end
                     
                 if( ~isempty(this.intXfmModelType))
-                    thismodel = fit( bexp, AxR, this.intXfmModelType );
+                    thismodel = fit( bexp, AxR, this.intXfmModelType, this.fitParams{:} );
                     dist = norm( AxR - feval( thismodel, bexp ) );
                 else
                     dist = norm( AxR - bexp );
@@ -841,7 +843,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
             
             if( returnList )
-                fprintf('sorting output to fitIdxAndModel\n');
+                %fprintf('sorting output to fitIdxAndModel\n');
                 [ distList, idx ] = sort( distList );
                 curdist = distList;
                 if( ~isempty(this.intXfmModelType))
