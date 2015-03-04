@@ -31,7 +31,7 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             this.pc.buildCmtx();
         end
         
-        function [ dictIdxs, dictCosts, models, msk ] = bestKdicts( this, xin, i, K  )
+        function [ dictIdxs, dictCosts, models, x, msk ] = bestKdicts( this, xin, i, K  )
             % returns
             
 %             if( ~exist( 'isLR', 'var' ) || isempty( isLR ))
@@ -52,7 +52,7 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             if( size(x,1) < size(x,2) )
                x = x'; 
             end
-%             size(x)
+            size(x)
             x = [x(:)]';
             
             % normlize x
@@ -64,11 +64,16 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                D = this.D2d_downsampled;
             end
             
-%             fprintf('length x: %d\n', length(x));
+            % check size of K
+            K = min( K, size( D, 1 ));
+            
+            fprintf('length x: %d\n', length(x));
+            fprintf('mag x: %d\n',    norm(x));
 
             % this.intXfmModelType
             
             if( ~isempty(this.intXfmModelType))
+                fprintf('fitting model: %s\n', this.intXfmModelType);
                 models = cell( this.numDict, 1 );
                 for n = 1 : this.numDict
                     bexp      = D(n,:);
@@ -88,11 +93,64 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 models = models( is(1:K) );
             end
         end
-            
+        
         function [ patchParams, modelList, pv, patch ] = solveBestK( this, x, K, cutoffFun )
+            if( ~exist( 'cutoffFun', 'var'))
+                cutoffFun = [];
+            end
+            
+            % patchParams = zeros( this.pc.numLocs, K );
+            patchParams = cell( this.pc.numLocs, 1 );
+            
+            modelList   = cell ( this.pc.numLocs, K );
+            pv = zeros( prod(this.pc.sz3d), 1);
+            
+            patch = [];
+            
+            % make sure x is a column vector
+            x = vecToRowCol( x, 'col');
+            
+            % solve for z-patches only
+            zIndices = find(this.pc.dimXyzList(:,1) == 3);
+            for k = 1:length( zIndices )
+                
+                j = zIndices( k );
+                fprintf('fitting model for location %d of %d\n', ...
+                    j, this.pc.numLocs );
+                
+                [ dictIdxs, dictCosts, models, msk ] = this.bestKdicts( x, j, K );
+                if( ~isempty( cutoffFun ))
+                    Kfun = cutoffFun( dictCosts, K );
+                    patchParams{k} = dictIdxs( 1:Kfun );
+                else
+                    patchParams{k} = dictIdxs;
+                end
+                
+                if( ~isempty(this.intXfmModelType))
+                    modelList( j, : ) = models;
+                end
+                
+                mskHR = this.pc.planeMaskI( j );
+                %nnz(msk > 0)
+                length( this.D2d( dictIdxs, :))
+                
+                % build initial high-res patch
+                % pv( mskHR > 0 ) = repmat( this.D2d( dictIdxs(1), :), [1 1 this.f]);
+                
+            end
+            
+            
+        end
+        
+        function [ patchParams, modelList, pv, patch ] = solveBestK_maybeBad( this, x, K, cutoffFun )
             % Solve for patch parameters from an observation x by:
             %   1)  solving for 2d patches that fit z-plane sub patches
-            %       - because 
+            %   2)  estimate a high-res patch from those 
+            %   3)  fit the remaining patches to that HR patch
+            %
+            %   This seems like a bad idea, actually -JB (2015 Mar 02)
+            %   Probably preferable to fit all patches directly to the
+            %       observation
             
             if( ~exist( 'cutoffFun', 'var'))
                 cutoffFun = [];
@@ -134,7 +192,7 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 length( this.D2d( dictIdxs, :))
                 
                 % build initial high-res patch
-                pv( mskHR > 0 ) = repmat( this.D2d( dictIdxs(1), :), [1 1 this.f]);
+                % pv( mskHR > 0 ) = repmat( this.D2d( dictIdxs(1), :), [1 1 this.f]);
                 
             end
             
@@ -144,6 +202,10 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 fprintf('fitting model for location %d of %d\n', ...
                     j, this.pc.numLocs );
                 
+                % DO NOT FIT TO ESTIMATED HIGH-RES PATCH! 
+                % [ dictIdxs, distList, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
+                
+                % FIT TO OBSERVATION
                 [ dictIdxs, distList, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
                 
                 if( ~isempty( cutoffFun ))

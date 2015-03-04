@@ -460,7 +460,7 @@ classdef PatchConstraints < handle
                     
                 end
                 
-                if( isempty( model ))
+                if( isempty( model ) || isempty(model{i}))
                     b( brng ) = patchMtx( idx, : );
                 else
                     b( brng ) = feval( model{i}, patchMtx( idx, : ));
@@ -652,7 +652,7 @@ classdef PatchConstraints < handle
             dict_ds = zeros( size( D2d )./[ 1 this.f] );
             for i = 1 : size( D2d, 1 )
                 d = reshape( D2d(i,:), this.sz2d );
-                ddown = reshape( mean( reshape(d', this.f,[]),1), this.sz2d./ [this.f 1] )';
+                ddown = PatchConstraints.downsamplePatch( d, this.sz2d, this.f );
                 dict_ds( i, : ) = ddown(:);
             end
         end
@@ -768,13 +768,11 @@ classdef PatchConstraints < handle
             Htemplate( 2:end, 2:end ) = 1; % the pixel-pixel interaction
         end
         
-        % TODO 
-%         function [ im_ds ] = downsampleIdxs( sz, msk )
-%             idxs = zeros( sz );
-%             
-%         end
-        
-        function [ im_ds ] = downsampleByMaskDim( im, msk )
+        function [ patch_ds ] = downsamplePatch( patch, sz2d, factor )
+            patch_ds = reshape( mean( reshape(patch', factor,[]),1), sz2d./[factor 1] )';
+        end
+
+        function [ im_ds, reshapeSz ] = downsampleByMaskDim( im, msk )
             
             [i,j,~]=ind2sub( size(msk), find(msk==1));
             if( any( i>1 ) )
@@ -787,6 +785,7 @@ classdef PatchConstraints < handle
             reshapeSz = size(msk);
             reshapeSz( dim ) = length( i );
             im_ds = mean( reshape( im(msk>0), reshapeSz ), dim );
+            size( im_ds )
         end
         
 %         function [ im_ds ] = downsampleByMaskGenVec( im, msk )

@@ -763,12 +763,15 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             
         end
         
-        function [ idx, curdist, models ] = fitIdxAndModel( this, i, x, doBest, returnList )
+        function [ idx, curdist, models ] = fitIdxAndModel( this, i, x, doBest, returnList, xMsk )
             if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
                 doBest =1;
             end
             if( ~exist( 'returnList', 'var' ) || isempty( returnList ))
                 returnList = false;
+            end
+            if( ~exist( 'xMsk', 'var' ))
+                xMsk = [];
             end
             
 %             % v1
@@ -783,7 +786,12 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 %             AxR  = cmtx * x;
 
 %           % v3
-            AxR = this.pc.patchProject( i, x );
+            if( isempty( xMsk ))
+                AxR = this.pc.patchProject( i, x );
+            else
+                AxR = x;
+            end
+                
             
             if( var( AxR ) < 0.0001 )
                 AxR = AxR + 0.0001.*randn(size(AxR));
@@ -812,6 +820,16 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
 %                 if( length( bexp ) ~= length( AxR ))
 %                     bexp = bexp( rng );
 %                 end
+
+                if( ~isempty( xMsk ))
+                    if( isscalar( xMsk ))
+                        bexp = PatchConstraints.downsampleByMaskDim( bexp, this.pc.planeMaskLRI( i ) );    
+                    else
+                        bexp = PatchConstraints.downsampleByMaskDim( bexp, xMsk );
+                    end
+                    bexp = bexp(:);
+                end
+                
                 
                 if( var( bexp ) < 0.0001 )
                     bexp = bexp + 0.0001.*randn(size(bexp));
