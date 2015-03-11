@@ -10,32 +10,46 @@ classdef Tid < handle
         D;      % The dictionary elements
         Dxfm;   % The full dictionary
         
+        X;      % The data
+        alpha;  % The dictionary coefficients
+        
+        numSamples;
+        numVars;
+        
         iMergeDxfms;    % indicates which original dictionary element (D)
                         % the elements of Dxfm came from
         mergeFun = @max;
         
         params; % dictionary learning parameters
+        
+        % optimization parameters
         bigIters = 1;
-        dictDist = 'euclidean';
-        distTol  = 0.1;
-
-        X;      % The data
-        alpha;  % The dictionary coefficients
-
-        numSamples;
-        numVars;
+        
+        % distance parameters
+        distanceFun;
+       
+        
+        % transformation helpers
+        tSubPatches;
 
         patchSize;
+        dictPatchSize;
 
         rotRng;
         rotXfmIdx;
+        
+        dictFun;
 
+    end
+    
+    properties
+        distTol  = 0.1;
     end
 
     methods
 
         % Constructor
-        function this = Tid( X, patchSize, params, distTol )
+        function this = Tid( X, patchSize, dictPatchSize, params, distTol )
 
             if( ~exist( 'distTol', 'var') || isempty(distTol))
                 this.distTol = 0.1;    
@@ -50,9 +64,14 @@ classdef Tid < handle
             if ( prod( patchSize ) ~= this.numVars )
                 error( 'patch size not compatible with dictionary size');
             end
-
+            
             this.patchSize = patchSize;
-
+            if( isempty( dictPatchSize ))
+                this.dictPatchSize = this.patchSize;
+            else
+                this.dictPatchSize = dictPatchSize;
+            end
+            
             if( ~exist('params','var') || isempty( params ))
                 this.params = Tid.defaultParams();
             else 
@@ -60,7 +79,11 @@ classdef Tid < handle
             end
 
             genVectorTransformations( this );
-
+            
+            this.dictFun = Tid.getDictionaryBuildingFunction();
+            this.setComparator();
+            this.tSubPatches = Tid.translationSubPatches( this.patchSize, this.dictPatchSize );
+            
         end % constructor
 
         function thecopy = copy( this )
@@ -68,18 +91,18 @@ classdef Tid < handle
             thecopy.X = [];
         end
 
+        function setComparator( this, method )
+            if( ~exist( 'method','var'))
+                method = 'euc';
+            end
+            this.distanceFun = PatchCompare( method );
+            
+        end
+        
         % Very experimental
         function D = buildDictionary(this)
             
-            try
-                this.D = mexTrainDL( this.X, this.params );
-%                 this.makeDictRotInv();
-            catch e
-                disp('no mexTrainDL - choosing dictionary by random sampling');
-                %e % print error 
-                this.D = this.X( :, randperm( this.numSamples, this.params.K));
-                this.makeDictRotInv();
-            end
+            this.D = this.dictFun( this.X, this.params );
 
             for iter = 1:this.bigIters
                
@@ -253,11 +276,114 @@ classdef Tid < handle
             end
 
         end
+        
+        function buildTranslationInvariantDictionary( this )
+            
+            % get an initial dictionary
+            try
+                this.D = mexTrainDL( this.X, this.params );
+                %                 this.makeDictRotInv();
+            catch e
+                disp('no mexTrainDL - choosing dictionary by random sampling');
+                %e % print error
+                this.D = this.X( :, randperm( this.numSamples, this.params.K));
+                this.makeDictRotInv();
+            end
+            
+            for iter = 1:this.bigIters
+                
+                % initialize with previous dictionary
+                this.params.D = this.translationInvariantHelper();
+                
+                this.D = mexTrainDL( this.X, this.params );
+                
+            end
+            
+        end % buildTranslationInvariant
+        
+        function [ newD, sim ] = translationInvariantHelper( this, D )
+            N = size( D, 1 );
+            
+%             N2 = N.*N;
+%             NN =  max( N2, min(10, 0.05.*N2) );
+%             sim = spalloc( N, N, NN );
 
+            numSp = size(this.tSubPatches,1);
+            mi = ( numSp - 1 )./2;
+            
+            sim = 500.*ones( N, N, numSp );
+            
+            % why not start m at (n+1)
+            %   to compare different subpatches of the two
+            for n = 1:N
+                
+                midPatch = D( n, this.tSubPatches(mi,:) );
+%                 size( midPatch )
+                for m = 1:N
+                    
+                    if( m == n )
+                        continue;
+                    end
+                    
+                    for k = 1:numSp
+                        dist = this.distanceFun.distance( midPatch, D(m,this.tSubPatches(k,:)) );
+                        fprintf('%d %d %d - %f\n', n, m , k, dist );
+                        if( dist < this.distTol )
+                            sim(n,m,k) = dist;
+                        end
+                    end
+                end
+            end
+            
+            newD = [];
+%             simOut = sparse( sim );
+        end
+        
     end % methods
 
     methods( Static )
+        
+        function [tx,ty] = inferTranslations( patchSize, dictPatchSize )            
+            diff = patchSize - dictPatchSize;
+            [ tx, ty ] = ndgrid( 1:diff(1)+1, 1:diff(2)+1);
+            tx = tx(:);
+            ty = ty(:);
+        end
+        
+        function [ sp, midIdx ] = translationSubPatches( patchSize, dictPatchSize )
+            [tx, ty ] = Tid.inferTranslations( patchSize, dictPatchSize );
+            N = length( tx );
+            sp = false( N, prod( patchSize ));
+            
+            for n = 1:N
+               tmp = false( patchSize );
+               tmp( tx(n) : tx(n) + dictPatchSize(1) - 1, ...
+                    ty(n) : ty(n) + dictPatchSize(2) - 1 ) = 1;
+                sp( n, : ) =  reshape( tmp, 1, [] );
+            end
+            midIdx = (N-1)./2;
+        end
+        
+        function dictFun = getDictionaryBuildingFunction()
+            dat = rand( 10, 10 );
+            
+            param.K = 5;  % dictionary size
+            param.lambda = 0.1;
+            param.numThreads = 1; % number of threads
+            param.verbose = 0;
+            param.iter = 400;  % num iterations.
 
+            try
+                D = mexTrainDL( dat, param );
+            catch e
+                % e
+                dictFun = @( X, params )( ... 
+                    X( :, randperm( size(X,2), params.K)) );
+                return;
+            end
+            dictFun = @( X, params )(mexTrainDL( X, params ));
+        end
+            
         function param = defaultParams()
 
             param.K = 250;  % dictionary size
@@ -344,7 +470,7 @@ classdef Tid < handle
             szds = sz ./ [1 1 dsFactor];
             szdsp = szds( [3 1 2 ]);
             imv = reshape(permute( im, [3 1 2] ), dsFactor, [] );
-            im_ds = permute( reshape(mean( imv, 1 ), szdsp ), [ 2 3 1]);
+            im_ds = permute( reshape(sum( imv, 1 ), szdsp ), [ 2 3 1]);
         end
         
     end % static methods
