@@ -10,11 +10,12 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
     
     properties( SetAccess = protected )
         D2d_downsampled;
+        comparator;
     end
     
     methods
         
-        function this = Dict2dTo3dSamplerSub( D2d, sz, f, overlappingPatches, scaleByOverlap )
+        function this = Dict2dTo3dSamplerSub( D2d, sz, f, overlappingPatches, scaleByOverlap, comparator )
             % Constructor
             % D2d -
             % sz  - size of 2d patches
@@ -28,10 +29,14 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                                             this.D2d_downsampled, ...
                                             sqrt(sum( this.D2d_downsampled.^2, 2 ) ));
             
+            if( ~exist( 'comparator','var'))
+                comparator = PatchCompare( 'euc' );
+            end
+            this.comparator = comparator;
             this.pc.buildCmtx();
         end
         
-        function [ dictIdxs, dictCosts, models, x, msk ] = bestKdicts( this, xin, i, K  )
+        function [ dictIdxs, dictCosts, models, x, msk, didTp ] = bestKdicts( this, xin, i, K  )
             % returns
             
 %             if( ~exist( 'isLR', 'var' ) || isempty( isLR ))
@@ -47,11 +52,11 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             msk = this.pc.planeMaskLRI( i );
             
 %             x = x( msk > 0 );
-            x = PatchConstraints.downsampleByMaskDim( x, msk );
-            x = squeeze(x);
-            if( size(x,1) < size(x,2) )
-               x = x'; 
-            end
+            [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
+%             x = squeeze(x);
+%             if( size(x,2) < size(x,1) )
+%                x = x'; 
+%             end
             size(x)
             x = [x(:)]';
             
@@ -67,8 +72,8 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
             % check size of K
             K = min( K, size( D, 1 ));
             
-            fprintf('length x: %d\n', length(x));
-            fprintf('mag x: %d\n',    norm(x));
+%             fprintf('length x: %d\n', length(x));
+%             fprintf('mag x: %d\n',    norm(x));
 
             % this.intXfmModelType
             
@@ -78,10 +83,12 @@ classdef Dict2dTo3dSamplerSub < Dict2dTo3dSampler
                 for n = 1 : this.numDict
                     bexp      = D(n,:);
                     models{n} = fit( bexp', x', this.intXfmModelType, this.fitParams{:} );
-                    dists(n)  = norm( x' - feval( models{n}, bexp' ) );
+%                     dists(n)  = norm( x' - feval( models{n}, bexp' ) );
+                    this.comparator.distance( x', feval( models{n}, bexp' ) );
                 end
             else
-                dists = pdist2( x, D );
+%                 fprintf('here\n');
+                dists =  this.comparator.distances( x, D );
             end
             
             [ dictCosts, is ] = sort( dists );
