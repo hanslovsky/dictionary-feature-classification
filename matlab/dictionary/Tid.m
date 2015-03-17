@@ -7,10 +7,6 @@ classdef Tid < handle
 
     properties ( SetAccess = private )
 
-        D;      % The dictionary elements
-        Dxfm;   % The full dictionary
-        
-        X;      % The data
         alpha;  % The dictionary coefficients
         
         numSamples;
@@ -22,12 +18,10 @@ classdef Tid < handle
         
         params; % dictionary learning parameters
         
-        % optimization parameters
-        bigIters = 1;
+
         
         % distance parameters
         distanceFun;
-       
         
         % transformation helpers
         tSubPatches;
@@ -42,8 +36,17 @@ classdef Tid < handle
 
     end
     
+    properties ( Transient, SetAccess = private )
+        X;      % The data
+        D;      % The dictionary elements
+        Dxfm;   % The full dictionary
+    end
+    
     properties
         distTol  = 0.1;
+        
+        % optimization parameters
+        bigIters = 1;
     end
 
     methods
@@ -277,31 +280,53 @@ classdef Tid < handle
 
         end
         
-        function buildTranslationInvariantDictionary( this )
+        function D = buildTranslationInvariantDictionary( this, iniD )
             
-            % get an initial dictionary
-            try
-                this.D = mexTrainDL( this.X, this.params );
-                %                 this.makeDictRotInv();
-            catch e
-                disp('no mexTrainDL - choosing dictionary by random sampling');
-                %e % print error
-                this.D = this.X( :, randperm( this.numSamples, this.params.K));
-                this.makeDictRotInv();
+            if( ~exist( 'iniD','var') || isempty( iniD ))
+                iniD = this.X( :, randperm( this.numSamples, this.params.K ));    
             end
+            size( iniD )
+            % set initial dictionary
+            this.params.D = iniD;
+            
+            drr = Drr( this );
+            
+            % initial optimization
+            fprintf('start of initial opt\n');
+            this.D = mexTrainDL( this.X, this.params );
+            fprintf('end of initial opt\n');
+%             try
+                
+%                 %                 this.makeDictRotInv();
+%             catch e
+%                 disp('no mexTrainDL - choosing dictionary by random sampling');
+%                 %e % print error
+%                 this.D = this.X( :, randperm( this.numSamples, this.params.K));
+%                 this.makeDictRotInv();
+%             end
             
             for iter = 1:this.bigIters
                 
                 % initialize with previous dictionary
-                this.params.D = this.translationInvariantHelper();
+                iniD = this.D;
+                size( iniD )
+                % prune redundant entries
+                Ddists = this.distanceFun.pairDistances( this.D, this.D );
+                ri = drr.prune( Ddists );
+                nnz(ri)
+                iniD( :, ri ) = this.X( :, randperm( this.numSamples, nnz(ri) ));
+                this.params.D = iniD;
                 
+                % optimize
                 this.D = mexTrainDL( this.X, this.params );
                 
+                fprintf('end of opt %d\n', iter);
             end
             
+            D = this.D;
         end % buildTranslationInvariant
         
-        function [ newD, sim ] = translationInvariantHelper( this, D )
+        function [ newD, sim ] = translationInvariantHelperDeep( this, D )
             N = size( D, 1 );
             
 %             N2 = N.*N;
@@ -311,14 +336,74 @@ classdef Tid < handle
             numSp = size(this.tSubPatches,1);
             mi = ( numSp - 1 )./2;
             
-            sim = 500.*ones( N, N, numSp );
+            bignum = this.distTol .* 1000
+            sim = bignum.*ones( N, N, numSp, numSp );
             
             % why not start m at (n+1)
             %   to compare different subpatches of the two
             for n = 1:N
                 
+                for j = 1:numSp
+                    
+                    midPatch = D( n, this.tSubPatches(j,:) );
+                    
+                    %                 size( midPatch )
+                    for m = 1:N
+                        
+                        if( m == n )
+                            continue;
+                        end
+                        
+                        for k = 1:numSp
+                            dist = this.distanceFun.distance( midPatch, D(m,this.tSubPatches(k,:)) );
+%                             fprintf('%d %d %d - %f\n', n, m , k, dist );
+                            if( dist < this.distTol )
+                                sim(n,m,j,k) = dist;
+                            end
+                        end
+                    end
+                end
+            end
+            
+            fprintf('num nan: %d\n',nnz( isnan( sim )));
+            
+%             sim(sim == bignum) = 0;
+%             aa = sum( sim, 3 )
+%             sum(aa,1)
+
+            newD = [];
+%             simOut = sparse( sim );
+        end
+        
+        function [ newD, sim ] = translationInvariantHelper_dist( this, D, nJobs )
+            
+        end
+        
+        function [ sim ] = translationInvariantHelperSparse( this, D, dimrange )
+            
+            N = size( D, 1 );
+            
+            if( ~exist('dimrange','var') || isempty( dimrange ))
+               dimrange = 1:N; 
+            end
+            
+            numSp = size(this.tSubPatches,1);
+            mi = ( numSp - 1 )./2;
+            
+            M = length( dimrange )
+            M2 = M*N
+            MM =  max( M2, min(10, 0.01.*M2) );
+            sim = spalloc( M, N, MM );
+            MM
+            nzmax(sim)
+
+            % why not start m at (n+1)
+            %   to compare different subpatches of the two
+            for n = dimrange
+                fprintf('%d\n', n);
                 midPatch = D( n, this.tSubPatches(mi,:) );
-%                 size( midPatch )
+                
+                % size( midPatch )
                 for m = 1:N
                     
                     if( m == n )
@@ -327,7 +412,46 @@ classdef Tid < handle
                     
                     for k = 1:numSp
                         dist = this.distanceFun.distance( midPatch, D(m,this.tSubPatches(k,:)) );
-                        fprintf('%d %d %d - %f\n', n, m , k, dist );
+                        % fprintf('%d %d %d - %f\n', n, m , k, dist );
+                        if( dist < this.distTol )
+                            sim(n,m,k) = dist;  %#ok<SPRIX>
+                        end
+                    end
+                end
+            end
+            
+            fprintf('num nan: %d\n',nnz( isnan( sim )));
+            
+%             sim(sim == bignum) = 0;
+%             aa = sum( sim, 3 )
+%             sum(aa,1)
+%             simOut = sparse( sim );
+        end
+        
+        function [ sim ] = translationInvariantHelper( this, D, dimrange )
+            N = size( D, 1 );
+            
+            numSp = size(this.tSubPatches,1);
+            mi = ( numSp - 1 )./2;
+            
+            bignum = this.distTol .* 1000;
+            sim = bignum.*ones( N, N, numSp );
+            
+            % why not start m at (n+1)
+            %   to compare different subpatches of the two
+            for n = 1:N
+                fprintf('%d\n', n);
+                midPatch = D( n, this.tSubPatches(mi,:) );
+                
+                for m = 1:N
+                    
+                    if( m == n )
+                        continue;
+                    end
+                    
+                    for k = 1:numSp
+                        dist = this.distanceFun.distance( midPatch, D(m,this.tSubPatches(k,:)) );
+%                         fprintf('%d %d %d - %f\n', n, m , k, dist );
                         if( dist < this.distTol )
                             sim(n,m,k) = dist;
                         end
@@ -335,8 +459,8 @@ classdef Tid < handle
                 end
             end
             
-            newD = [];
-%             simOut = sparse( sim );
+            fprintf('num nan: %d\n',nnz( isnan( sim )));
+            
         end
         
     end % methods
