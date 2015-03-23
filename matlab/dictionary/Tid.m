@@ -375,7 +375,39 @@ classdef Tid < handle
 %             simOut = sparse( sim );
         end
         
-        function [ newD, sim ] = translationInvariantHelper_dist( this, D, nJobs )
+        function [ sim ] = translationInvariantHelper_dist( this, D, nJobs )
+            global DICTPATH;
+            
+            N = size( D, 1 );
+            
+            % build ranges
+            dimrangeList = cell( nJobs, 1 );
+            bnds = ceil(linspace( 1, N+1, nJobs+1 ));
+            for i = 1 : length(bnds) - 1
+                dimrangeList{i} = bnds(i) : bnds(i+1)-1;
+            end
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 1; % translationInvariantHelperSparse has 1 output args
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                repmat( {'this'}, num_jobs, 1), ...
+                repmat( {'translationInvariantHelperSparse'}, num_jobs, 1), ...
+                repmat( {num_out_args}, num_jobs, 1), ...
+                num2cell( 1:num_jobs ), ...
+                repmat( {D}, num_jobs, 1), ...
+                dimrangeList
+                };
+            
+            f_out = qsub_dist(fun, 1, use_gpu, ...
+                [], [], run_script, ...
+                varargin{:} );
+            
+            sim = cat( 1, f_out{:}{1}{1} );
             
         end
         
@@ -390,11 +422,11 @@ classdef Tid < handle
             numSp = size(this.tSubPatches,1);
             mi = ( numSp - 1 )./2;
             
-            M = length( dimrange )
-            M2 = M*N
+            M = length( dimrange );
+            M2 = M*N;
             MM =  max( M2, min(10, 0.01.*M2) );
             sim = spalloc( M, N, MM );
-            MM
+            MM;
             nzmax(sim)
 
             % why not start m at (n+1)
