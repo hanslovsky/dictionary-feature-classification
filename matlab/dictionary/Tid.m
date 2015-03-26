@@ -18,8 +18,6 @@ classdef Tid < handle
         
         params; % dictionary learning parameters
         
-
-        
         % distance parameters
         distanceFun;
         
@@ -34,6 +32,8 @@ classdef Tid < handle
         
         dictFun;
 
+        % persistence
+        obj_fn;
     end
     
     properties ( Transient, SetAccess = private )
@@ -43,10 +43,11 @@ classdef Tid < handle
     end
     
     properties
-        distTol  = 0.1;
+        distTol  = 0.02;
         
         % optimization parameters
         bigIters = 1;
+        nJobs    = 20;
     end
 
     methods
@@ -59,9 +60,10 @@ classdef Tid < handle
             else
                 this.distTol = distTol;
             end
+            this.obj_fn = [];
                 
             this.X = X;  % the data
-            [this.numVars, this.numSamples] = size( X );
+            [ this.numSamples, this.numVars ] = size( X );
 
             % check that patchSize is compatible with dictionary size
             if ( prod( patchSize ) ~= this.numVars )
@@ -85,9 +87,27 @@ classdef Tid < handle
             
             this.dictFun = Tid.getDictionaryBuildingFunction();
             this.setComparator();
+            
+            % TODO - this assumes that patchSizes are odd.
+            % should we check this? if, so where?
             this.tSubPatches = Tid.translationSubPatches( this.patchSize, this.dictPatchSize );
             
         end % constructor
+
+        function obj_fn = save( this, fn )
+            global DFEVAL_DIR;
+            if( exist( 'fn', 'var') && ~isempty( fn ) )
+                this.obj_fn = fn;
+            elseif( isempty( this.obj_fn ))
+                this.obj_fn = fullfile( DFEVAL_DIR, sprintf('Dict2dTo3d_%s.mat', ...
+                    datestr( now, 30 ) ));
+            end
+            
+            obj_fn = this.obj_fn;
+            if( ~exist( obj_fn, 'file'))
+                save( this.obj_fn, 'this' ); 
+            end
+        end
 
         function thecopy = copy( this )
             thecopy = Tid( this.X, this.patchSize, this.params, this.distTol );
@@ -280,45 +300,83 @@ classdef Tid < handle
 
         end
         
-        function D = buildTranslationInvariantDictionary( this, iniD )
+        function [D, dictiterList, simRiList ] = buildTranslationInvariantDictionary( ...
+                this, iniD, outputDictAtEveryIter )
             
+            wasInitialization = true;
             if( ~exist( 'iniD','var') || isempty( iniD ))
-                iniD = this.X( :, randperm( this.numSamples, this.params.K ));    
+                iniD = this.X( randperm( this.numSamples, this.params.K ), : );
+                wasInitialization = false;    
             end
-            size( iniD )
-            % set initial dictionary
-            this.params.D = iniD;
+            this.D = iniD;
+            
+            if( ~exist( 'outputDictAtEveryIter','var') || isempty( outputDictAtEveryIter ))
+                outputDictAtEveryIter = false;
+            end
             
             drr = Drr( this );
             
             % initial optimization
-            fprintf('start of initial opt\n');
-            this.D = mexTrainDL( this.X, this.params );
-            fprintf('end of initial opt\n');
-%             try
-                
-%                 %                 this.makeDictRotInv();
-%             catch e
-%                 disp('no mexTrainDL - choosing dictionary by random sampling');
-%                 %e % print error
-%                 this.D = this.X( :, randperm( this.numSamples, this.params.K));
-%                 this.makeDictRotInv();
-%             end
+            if( ~wasInitialization )
+                % set initial dictionary
+                this.params.D = this.D';
+                fprintf('start of initial opt\n');
+                this.D = mexTrainDL( this.X', this.params );
+                this.D = this.D'; % make sure dictionary elements are in the rows
+                fprintf('end of initial opt\n');
+            end
+            
+            %             try
+            %                   this.makeDictRotInv();
+            %             catch e
+            %                 disp('no mexTrainDL - choosing dictionary by random sampling');
+            %                 %e % print error
+            %                 this.D = this.X( :, randperm( this.numSamples, this.params.K));
+            %                 this.makeDictRotInv();
+            %             end
+            
+            if( outputDictAtEveryIter )
+                k = 1;
+                m = 1;
+                if( ~wasInitialization )
+                    dictiterList = cell( this.bigIters + 1, 1 );
+                    simRiList = cell( this.bigIters, 1 );
+                    
+                    dictiterList{ k } = this.D;
+                    k = k + 1;
+                else
+                    dictiterList = cell( this.bigIters, 1 );
+                    simRiList = cell( this.bigIters - 1, 1 );
+                end
+            end
             
             for iter = 1:this.bigIters
                 
                 % initialize with previous dictionary
-                iniD = this.D;
-                size( iniD )
+                % ( may be the input initial dictionary )
+                
                 % prune redundant entries
-                Ddists = this.distanceFun.pairDistances( this.D, this.D );
+                %  THE GENERAL, BUT SLOW VERSION
+                %                 Ddists = this.distanceFun.pairDistances( this.D, this.D );
+                
+                [Ddists] = this.translationInvariantHelper_dist( this.D, this.nJobs );
                 ri = drr.prune( Ddists );
-                nnz(ri)
-                iniD( :, ri ) = this.X( :, randperm( this.numSamples, nnz(ri) ));
-                this.params.D = iniD;
+                
+                this.D( ri, : ) = this.X( randperm( this.numSamples, nnz(ri) ), :);
                 
                 % optimize
-                this.D = mexTrainDL( this.X, this.params );
+                this.D = mexTrainDL( this.X', this.params );
+                this.D = this.D'; % make sure dictionary elements are in the rows
+                
+                if( outputDictAtEveryIter )
+                    dictiterList{ k } = this.D;
+                    
+                    simRiList{ m, 1 } = Ddists;
+                    simRiList{ m, 2 } =  ri;
+                    m = m + 1;
+                
+                    k = k + 1;
+                end
                 
                 fprintf('end of opt %d\n', iter);
             end
@@ -336,18 +394,16 @@ classdef Tid < handle
             numSp = size(this.tSubPatches,1);
             mi = ( numSp - 1 )./2;
             
-            bignum = this.distTol .* 1000
+            bignum = this.distTol .* 1000;
             sim = bignum.*ones( N, N, numSp, numSp );
             
             % why not start m at (n+1)
             %   to compare different subpatches of the two
             for n = 1:N
-                
                 for j = 1:numSp
                     
                     midPatch = D( n, this.tSubPatches(j,:) );
                     
-                    %                 size( midPatch )
                     for m = 1:N
                         
                         if( m == n )
@@ -393,25 +449,105 @@ classdef Tid < handle
             use_gpu = 0;
             num_out_args = 1; % translationInvariantHelperSparse has 1 output args
             run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
-            
-            varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
-                repmat( {'this'}, num_jobs, 1), ...
-                repmat( {'translationInvariantHelperSparse'}, num_jobs, 1), ...
-                repmat( {num_out_args}, num_jobs, 1), ...
-                num2cell( 1:num_jobs ), ...
-                repmat( {D}, num_jobs, 1), ...
+           
+            varargin = {  repmat( {this.obj_fn}, nJobs, 1), ...
+                repmat( {'this'}, nJobs, 1), ...
+                repmat( {'translationInvariantHelperSparse'}, nJobs, 1), ...
+                repmat( {num_out_args}, nJobs, 1), ...
+                repmat( {D}, nJobs, 1), ...
                 dimrangeList
-                };
+            };
+                %num2cell( 1:nJobs ), ...
             
             f_out = qsub_dist(fun, 1, use_gpu, ...
                 [], [], run_script, ...
                 varargin{:} );
+
+            % assume that cat is efficient with sparse matrices
+            % and try to call it just once
+            % * first grab the interesting elements and drop them into a 
+            %   cell array
+
+            tmp = cell( nJobs, 1 );
+            sumsz = 0;
+            for i = 1:nJobs
+                tmp{i} = f_out{i}{1}{1};
+                size(tmp{i})
+                sumsz = sumsz + size( tmp{i}, 1);
+            end
             
-            sim = cat( 1, f_out{:}{1}{1} );
+            sim = cat( 1, tmp{:} );
             
         end
         
         function [ sim ] = translationInvariantHelperSparse( this, D, dimrange )
+
+            N = size( D, 1 );
+            if( ~exist('dimrange','var') || isempty( dimrange ))
+               dimrange = 1:N; 
+            end
+            M = length( dimrange );
+            
+            numSp = size(this.tSubPatches,1);
+            
+%             if( numSp == 1 )
+%                 mi = 1;
+%             else
+%                 mi = ( numSp - 1 )./2;
+%             end
+            
+            M2 = M*N;
+            MM =  max( M2, min(10, 0.01.*M2) );
+            sim = spalloc( M, N, MM );
+            
+            totOverlapRange =  2.*(this.patchSize - 1) + 1;
+            szDiff = this.patchSize - this.dictPatchSize;
+            tmpLo = ((totOverlapRange - 1)/2 - szDiff);
+            tmpHi = ((totOverlapRange - 1)/2 + szDiff);
+            
+            [vorX, vorY] = ndgrid( tmpLo(1):tmpHi(1), tmpLo(2):tmpHi(2));
+            validOverlapInds = sub2ind( totOverlapRange, vorX(:), vorY(:));
+            
+            % get range around center
+            
+            % TODO think about whether explicitly storing
+            % the symmetrical elements of the matrix is worth it...
+            %   storing them requires extra logic elsewhere
+            %   not storing them is cheaper
+            for n = 1:M
+                
+                if( mod(n,10) == 0 )
+                    fprintf('%d\n', n);
+                end
+
+                % basePatch = reshape( D( dimrange(n), this.tSubPatches(mi,:) ), this.dictPatchSize );
+                basePatch = reshape( D( dimrange(n), : ), this.patchSize );
+                
+                %for m = 1:N
+                for m = (dimrange(n)+1) : N
+
+%                     fprintf('n: %d, m: %d\n', dimrange(n), m);
+                    
+                    %if( m == n )
+                    %    continue;
+                    %end
+                  
+                    % first compute max cross-correlationa between dictionary elements
+%                     xc = xcorr2( basePatch, reshape( D( m, : ), this.patchSize ));
+                    xc = normxcorr2_general( basePatch, reshape( D( m, : ), this.patchSize ));
+                    
+                    % distance is  -max(cross correlation) 
+                    dist = 1 - max( xc( validOverlapInds ));
+
+                    if( dist < this.distTol )
+                        sim(n,m) = dist;  %#ok<SPRIX>
+                    end
+                end
+            end
+
+        end
+
+        function [ sim ] = translationInvariantHelperSparse_old( this, D, dimrange )
             
             N = size( D, 1 );
             
@@ -426,8 +562,8 @@ classdef Tid < handle
             M2 = M*N;
             MM =  max( M2, min(10, 0.01.*M2) );
             sim = spalloc( M, N, MM );
-            MM;
-            nzmax(sim)
+            %MM;
+            %nzmax(sim)
 
             % why not start m at (n+1)
             %   to compare different subpatches of the two
