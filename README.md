@@ -2,7 +2,7 @@ dictionary-feature-classification
 =================================
 
 # Formatting data
-This project accepts data in H5 format
+This project accepts data in the [HDF5 format](https://hdfgroup.org/HDF5/)
 
 ## Single file 
 * The H5 file must have a 'labels' group with one Dataset per class.
@@ -21,3 +21,8 @@ $ h5ls iris_all.h5/labels
 2                        Dataset {50, 4}
 3                        Dataset {50, 4}
 ```
+
+## Multiple files
+It is sometimes convenient to store data in multiple h5 files.  In this case, 
+one can specify a directory containing multiple h5 files.  In this case, all h5
+files in that directory will be included in the dataset.  
