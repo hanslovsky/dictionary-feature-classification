@@ -1,6 +1,20 @@
 dictionary-feature-classification
 =================================
 
+# Classification 
+The following trains a classifier on a training set, predicts classes for the training and test data, and
+reports accuracy metrics.
+```bash
+$ classifyAndTest training_data.h5 test_data.h5 output_dir classifier_type subsample_param
+```
+See below for a details on the format of the expected h5 files.
+
+## Subsample
+One can subsample the input data during training to speed-up the process.
+The default behavior uses all the data for training ( subSample = "-1" ).
+Specifying a positive integer (N) will use that number of training samples.
+Specifying a float value in (0,1] will use that fraction of training samples.
+
 # Formatting data
 This project accepts data in the [HDF5 format](https://hdfgroup.org/HDF5/)
 
@@ -13,7 +27,7 @@ This project accepts data in the [HDF5 format](https://hdfgroup.org/HDF5/)
 
 ### Example
 The below is an example of the format for the famous [iris data](http://archive.ics.uci.edu/ml/datasets/Iris).
-```
+```bash
 $ h5ls iris_all.h5
 labels                   Group
 $ h5ls iris_all.h5/labels
