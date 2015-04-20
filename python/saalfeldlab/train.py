@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     classifier = getattr( classifiers, args.classifier )( **ast.literal_eval( args.kwargs ) )
 
-    handler      = data.DataHandler( args.training_data, np.dtype( args.data_type ), args.subsample )
+    handler      = data.DataHandler( args.training_data, np.dtype( args.data_type ), int( args.subsample ) )
     print 'reading the data'
     data, labels = handler.createFeatureMatrixAndLabelVector()
     print 'done'
