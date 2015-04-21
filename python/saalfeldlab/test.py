@@ -4,6 +4,7 @@ sys.path.append( os.path.dirname( os.path.realpath( __file__ ) ) )
 
 from classification import *
 import numpy as np
+import evalClassification
 import vigra
 import itertools
 import inspect
@@ -38,24 +39,9 @@ if __name__ == "__main__":
         
     if args.predict_probabilities:
         prediction = classifier.predictProbabilities( data )
+        evalClassification.evalProb( labels, prediction[:,1], True, os.path.splitext(os.path.basename( args.data ))[0] )
     else:
         prediction = classifier.predictLabels( data )
-
-    correct = np.sum( prediction.flat == labels.flat )
-    acc = correct * 1.0 / np.product( prediction.shape )
-
-    labelList = np.unique( labels ) 
-    # Compute balanced class accuracy
-    acc_bal = 0.0
-    for l in labelList:
-       numL = np.sum( labels.flat == l )
-       # the true positive rate for this label
-       acc_bal += np.sum( np.logical_and( (labels.flat == l), (prediction.flat == l))) 
-
-    # divide by number of labels
-    acc_bal /= np.prod( labels.shape )
-
-    print "Ncorrect\tN\tacc\tacc_bal"
-    print "%d\t\t%d\t%0.4f\t%0.4f" % ( correct,  np.product( prediction.shape ), acc, acc_bal ) 
+        evalClassification.evalClass( labels, prediction )
 
     sys.exit( 0 )
