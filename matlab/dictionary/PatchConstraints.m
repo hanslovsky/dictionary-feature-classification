@@ -1,4 +1,6 @@
 classdef PatchConstraints < handle
+    % PatchConstraints treats 2d image patches as potential constraints 
+    % to a 3d image patch. 
     
     properties ( SetAccess = protected )
         f;  % downsampling factor
@@ -9,21 +11,37 @@ classdef PatchConstraints < handle
         numLocs;
         
         pairLocRng;
-        dimXyzList;
+        
+        % the list of sub-patch location
+        % indexed by dimension ( normal vector to sub patch )
+        % and xyz ( location )
+        dimXyzList; 
         xsectList;
         
-        cmtx;     % the constraint matrix
-        cmtxInv;  % pseudo-inverse of the constraint matrix
+        % The constraint matrix.
+        % A block matrix where groups of (prod(this.sz2s)) consecutive rows
+        % deal with constraints from a particular sub patch.
+        % Note that each sub-patch introduces a number of
+        % constraints equal to the number of pixels per 2d patch
+        cmtx;
+                    
+        cmtxInv;    % pseudo-inverse of the constraint matrix
+        
         locToConstraint;
         constraintToHrLoc;
         
         subCmtxAndInvs;
-        constraintVecXsectSubsets; %
-        constraintVecSubsets; %
+        constraintVecXsectSubsets;
+        
+        % [ numSubLocs x numConstraints ]
+        % (i,j) element is true if the j^th constraint
+        % comes from the i^th subPatch
+        constraintVecSubsets;   
         scaleByOverlap = 1;
         
-        overlapFraction;    % fraction of this location that
-                            % overlaps with field-of-view
+        % fraction of this location that
+        % overlaps with field-of-view
+        overlapFraction;   
     end
     
     properties
@@ -102,6 +120,9 @@ classdef PatchConstraints < handle
         end
         
         function buildCmtx( this, doInv )
+            % does the work of building the constraint matrix and other 
+            % data containers useful for computation.  
+            % Usually called by the constructor.
             
             if( ~exist('doInv','var') || isempty( doInv ))
                 doInv = true;
@@ -257,11 +278,11 @@ classdef PatchConstraints < handle
             end
         end
         
-        function constraints = cmtxFromConstraints( this, obj )
+        function [constraints, bi] = cmtxFromConstraints( this, obj )
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
-                constraints = this.cmtxFromConstraintsNode( obj );
+                [constraints, bi] = this.cmtxFromConstraintsNode( obj );
             else
-                constraints = this.cmtxFromConstraintsList( obj );
+                [constraints, bi]= this.cmtxFromConstraintsList( obj );
             end
         end
         
@@ -283,7 +304,52 @@ classdef PatchConstraints < handle
         end
         
         function [constraints, binds] = cmtxFromConstraintsList( this, locXyz )
+            % outputs a constraint matrix from a list of constraints
+            % locXyz is N x 2
+            %   N - number of constraints
+            %   3 - [ dim xyz]
+            %
+            % Also returns binds: the indexes into the b-vector that are
+            % affected by the input constraints
+        
+
+            if( islogical( locXyz ))
+                locXyz = find( locXyz );
+            end
+
+            ndim  = nnz( size(locXyz) > 1);
+            if( ndim == 1 )
+                N = numel(locXyz);
+            else
+                N = size(locXyz,1);
+            end
+            
+            cmtxIdxs = false( 1, this.numConstraints );
+            binds    = false( 1, this.numConstraints );
+            for d = 1:N 
+                
+                if( ndim <= 1)
+                    idx =  locXyz(d);
+                elseif( size( locXyz, 2) == 2)
+                    idx = this.locXyzDim2Idx(   locXyz(d,1), ...
+                                                locXyz(d,2));
+                else
+                    error('locXyz must have 1 or 2 columns ');
+                end
+                
+                cmtxIdxs = cmtxIdxs | this.locToConstraint( idx,: );
+                binds = binds | this.locToConstraint( idx,: );
+            end
+              
+            constraints = this.cmtx( cmtxIdxs, : );
+        end
+        
+        function [constraints, binds] = cmtxFromConstraintsListOLD( this, locXyz )
         % outputs a constraint matrix from a list of constraints
+        % locXyz is N x 2
+        %   N - number of constraints
+        %   3 - [ dim xyz]
+        
 
             if( islogical( locXyz ))
                 locXyz = find( locXyz );
@@ -311,7 +377,7 @@ classdef PatchConstraints < handle
                 end
                 
                 cmtxIdxs = cmtxIdxs | this.locToConstraint(idx,:);
-                binds = binds | this.constraintVecSubsets( idx,: );
+                binds = binds | this.locToConstraint( idx,: );
             end
               
             constraints = this.cmtx( cmtxIdxs, : );
@@ -356,6 +422,21 @@ classdef PatchConstraints < handle
                              
         end
            
+        function omsk = overlapMask( this, dimxyzList )
+            % At the moment only accepts inputs in array form
+            % of the format [ N x 2 ]
+            % where N is the number of locations and 
+            % the second dimension contains [ dim xyz ]
+            for i = 1:size( dimxyzList, 1 )
+                msk = this.planeMask( dimxyzList(i,2), dimxyzList(i,1), this.f );
+                if( i == 1 )
+                    omsk = msk;
+                end
+                omsk = omsk & msk;
+                nnz( omsk )
+            end
+        end
+        
         function b = constraintValue( this, patchMtx, obj, model )
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
                 b = this.constraintValueNode( patchMtx, obj, model );
@@ -503,7 +584,7 @@ classdef PatchConstraints < handle
         end
         
         function msk = planeMask( this, xyz, n, f, centered )
-        % n is {1,2,3}
+            % n is {1,2,3}
         
             sz = this.sz3d;
             msk = zeros( sz );
@@ -769,10 +850,19 @@ classdef PatchConstraints < handle
         end
         
         function [ patch_ds ] = downsamplePatch( patch, sz2d, factor )
-            patch_ds = reshape( mean( reshape(patch', factor,[]),1), sz2d./[factor 1] )';
+            patch_ds = reshape( sum( reshape( patch, factor, [] ), 1),  sz2d./[factor 1] );
+        end
+        
+        function [ patch_ds ] = downsamplePatch2( patch, sz2d, factor )
+            patch_ds = reshape( sum( reshape(patch', factor,[]),1), sz2d./[1 factor] )';
         end
 
-        function [ im_ds, reshapeSz ] = downsampleByMaskDim( im, msk )
+        function [ im_ds, reshapeSz, didTranspose ] = downsampleByMaskDim( im, msk, doTp )
+            if( ~exist('doTp','var'))
+                doTp = false;
+            end
+            
+            didTranspose = false;
             
             [i,j,~]=ind2sub( size(msk), find(msk==1));
             if( any( i>1 ) )
@@ -784,8 +874,13 @@ classdef PatchConstraints < handle
             end
             reshapeSz = size(msk);
             reshapeSz( dim ) = length( i );
-            im_ds = mean( reshape( im(msk>0), reshapeSz ), dim );
-            size( im_ds )
+            im_ds = sum( reshape( im(msk>0), reshapeSz ), dim );
+            %size( im_ds )
+            im_ds = squeeze(im_ds);
+            if( size(im_ds,2) < size(im_ds,1) || doTp )
+               im_ds = im_ds'; 
+               didTranspose = true;
+            end
         end
         
 %         function [ im_ds ] = downsampleByMaskGenVec( im, msk )

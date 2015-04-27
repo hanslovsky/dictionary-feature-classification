@@ -1110,15 +1110,78 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        function [ costList, cmtx, cmtxi ] = patchConfigCosts( this, dimXyzListFixed, patchIdxList, ...
+                        compareOnlyInOverlapRegion )
+            % fix the sub-patch locations, changing only the patch indexes
+            % and compute the cost for each of the given patchIndexes
+            %
+            if( ~exist( 'compareOnlyInOverlapRegion', 'var') || isempty(compareOnlyInOverlapRegion))
+               compareOnlyInOverlapRegion = false; 
+            end
+            
+            % build fixex constraint matrix
+            [ cmtx, bi ] = this.pc.cmtxFromConstraints( dimXyzListFixed );
+            cmtxi = pinv( cmtx );
+            
+            if( compareOnlyInOverlapRegion )
+               [ overlapInds ] = this.pc.overlapMask( dimXyzListFixed ); 
+               overlapInds = overlapInds(:);
+            end
+            
+            numIdxCombos = size( patchIdxList, 1 );
+            costList = zeros( numIdxCombos, 1 );
+            
+            for i = 1:numIdxCombos
+               
+                % set values of b
+                b = reshape( this.D2d( patchIdxList( i, : ), : )', [], 1 );
+                
+                if( compareOnlyInOverlapRegion )
+                    x = cmtxi * b;
+                    cost = norm( cmtx(overlapInds(bi),:) * x - b(overlapInds(bi)) );
+                else
+                    x = cmtxi * b;
+                    cost = norm( cmtx * x - b );
+                end
+                
+                costList( i ) = cost;
+            end
+        end
+        
+        function [cmtx, cmtxi] = cmtxFromLocs( this, dimXyzListFixed )
+            % DEPRECATED!
+            % Use this.pc.cmtxFromConstraints( .. ) instead.
+            %
+            % build constraint mtx and its pseudo inverse from 
+            % the input patch locations
+            
+            patchNumElem    = prod( this.sz2d );
+            numLocs         = size(dimXyzListFixed,1);
+            numConstraints  = numLocs * patchNumElem;
+            numVariables    = prod( this.sz3d );
+            
+            cmtx = zeros( numConstraints, numVariables ); % this wont change
+            k = 1;
+            for i = 1 : numLocs
+                thisdim = dimXyzListFixed( i, 1 );
+                thisxyz = dimXyzListFixed( i, 2 );
+                msk = this.pc.planeMask( thisxyz, thisdim, this.f );
+                for j = 1:patchNumElem
+                    cmtx( k, (msk==j) ) = 1;
+                    k = k + 1;
+                end
+            end
+            cmtxi = pinv( cmtx );
+            
+        end
+        
         function [cost, cmtx, b] = patchConfigCost( this, patchIdx, dim, xyz, config )
             import net.imglib2.algorithms.patch.*;
             import net.imglib2.algorithms.opt.astar.*;
             
-            
             tmpNode = SortedTreeNode( ...
                         SubPatch2dLocation( dim, xyz, patchIdx, 9999 ), ...
                         config );
-                    
             
             % build constraint mtx
             patchNumElem   = prod( this.sz2d );
@@ -1132,13 +1195,14 @@ classdef Dict2dTo3d < handle
             
             k = 1;
             for i = 1 : ( tmpNode.getDepth() + 1 )
+                
                 thisdim = thisNode.getData().dim;
                 thisxyz = thisNode.getData().xyz;
                 thisidx = thisNode.getData().idx;
                 
                 % TODO - dont recompute this msk every time
-                %msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
-                msk = this.planeMask( thisxyz, thisdim, this.f );
+                % msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
+                msk = this.pc.planeMask( thisxyz, thisdim, this.f );
             
                 for j = 1:patchNumElem
                     
@@ -1153,7 +1217,6 @@ classdef Dict2dTo3d < handle
             
             % for debug purposes
 %             figure; imdisp( cmtx );
-%             aaassddeeww=1;
             
             % solve and compute the cost
             cmtxi = pinv( cmtx );
@@ -1203,8 +1266,10 @@ classdef Dict2dTo3d < handle
 
             %pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
             %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
-            pm1 = this.pc.planeMask( sz3, xyz1, n1, this.f );
-            pm2 = this.pc.planeMask( sz3, xyz2, n2, this.f );
+            
+            %%
+            pm1 = this.pc.planeMask( xyz1, n1, this.f );
+            pm2 = this.pc.planeMask( xyz2, n2, this.f );
             overlap = (pm1 > 0) & (pm2 > 0);
            
             [cmtx1, b1] = Dict2dTo3d.contraintsFromMask( p1, overlap, pm1 );
@@ -1390,7 +1455,7 @@ classdef Dict2dTo3d < handle
         %   this.dimXyzList( k ) and
         %   this.dimXyzList( l ) 
         %
-            [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
+            [dList, xyzList] = ndgrid( 1:3, this.pc.pairLocRng);
             N = numel(dList);
             
 %             this.dimXyzList = [ dList(:), xyzList(:) ];
