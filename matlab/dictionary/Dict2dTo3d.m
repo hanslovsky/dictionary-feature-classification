@@ -1110,6 +1110,243 @@ classdef Dict2dTo3d < handle
             end
         end
         
+        function [ f_out, startEndList ] = patchConfigCostsBrute_dist( this, dimXyzListFixed, ...
+                                num_jobs  )
+           
+            global DICTPATH;
+            
+            numPos   = size( dimXyzListFixed, 1 );
+            numTasks = this.numDict * this.numDict * this.numDict;
+            startEndList = divideTasks( numTasks, num_jobs );
+            
+            funName = 'patchConfigCostsBrute';
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 4;
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+     
+            argsin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                        repmat( {'this'}, num_jobs, 1), ...
+                        repmat( {funName}, num_jobs, 1), ...
+                        repmat( {num_out_args}, num_jobs, 1), ...
+                        repmat( {dimXyzListFixed}, num_jobs, 1), ...
+                        startEndList ...
+                    };
+            
+            f_out = qsub_dist_noLoad(fun, 1, use_gpu, [], [], ...
+                        run_script, argsin{:} );
+            
+        end
+        
+        function [ f_out, startEndList ] = patchConfigCostsGreed_dist( this, dimXyzListFixed, ...
+                                K, num_jobs  )
+           
+            global DICTPATH;
+            
+            numPos   = size( dimXyzListFixed, 1 );
+            numTasks = this.numDict;  
+            startEndList = divideTasks( numTasks, num_jobs, 1 );
+            
+            funName = 'patchConfigCostsGreedy3';
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 2;
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+     
+            argsin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                        repmat( {'this'}, num_jobs, 1), ...
+                        repmat( {funName}, num_jobs, 1), ...
+                        repmat( {num_out_args}, num_jobs, 1), ...
+                        repmat( {dimXyzListFixed}, num_jobs, 1), ...
+                        startEndList, ...
+                        repmat( {K}, num_jobs, 1) ...
+                    };
+            
+            f_out = qsub_dist_noLoad(fun, 1, use_gpu, [], [], ...
+                        run_script, argsin{:} );
+            
+        end
+
+        function [ bestIdxs, costs ] = patchConfigCostsGreedy3( this, dimXyzListFixed, iniPatches, K )
+            
+            nTotLocs = size( dimXyzListFixed, 1 );
+            nLocs = nTotLocs - 1; % one (the first) location will be filled to start
+            
+            [ cmtx1, ~ ] = this.pc.cmtxFromConstraints( dimXyzListFixed(1:2,:) );
+            cmtxi1 = pinv( cmtx1 );
+
+            [ cmtx2, ~ ] = this.pc.cmtxFromConstraints( dimXyzListFixed );
+            cmtxi2 = pinv( cmtx2 );
+
+            % I'm coding this generally, but am afraid 
+            % that this might get out of control, so put a check to see how
+            % big nLocs is.  
+            if( nLocs ~= 2 )
+                error( 'Only allow nLocs <= 2 for now');
+            end
+            bestIdxs = zeros( K^(nLocs), nTotLocs ); 
+            costs    = zeros( K^(nLocs), 1 ); 
+
+            N = length( iniPatches );
+            m = 1;
+            for i = 1:N
+
+                bestIdxs1 = this.patchConfigCostsGreedySingle( dimXyzListFixed(1:2,:), ...
+                   iniPatches(i), K, cmtx1, cmtxi1 ); 
+
+                for j = 1:K
+
+                    fprintf('i %d j %d k %d\n', i, j, m );
+                    [bestIdxs2, ~, ~, subCosts] = this.patchConfigCostsGreedySingle( dimXyzListFixed, ...
+                       [iniPatches(i), bestIdxs1(j)], K, cmtx2, cmtxi2 ); 
+                   
+                    bestIdxs(m:m+K-1,:) = [ iniPatches(i).*ones(K,1),... 
+                                            bestIdxs1(j).*ones(K,1), ...
+                                            bestIdxs2];
+
+                    costs(m:m+K-1) = subCosts(1:K);
+                    m = m + K;
+                end
+            end
+        end
+        
+        function [ bestIdxs, cmtx, cmtxi, costs ] = ...
+            patchConfigCostsGreedySingle( this, dimXyzListFixed, ...
+                iniPatch, K, cmtx, cmtxi )
+            % computes good configurations in a greedy manner - 
+            %   For the a given dictionary element (iniPatch): 
+            %       Fix it in an orientation
+            %       Pick a second orientation, and find the K most
+            %           consistent patches
+            %       Fix this two-patch configuration,
+            %       For a third orientation, find the K most consistent
+            %           dictionary elements
+            
+%             if( ~exist( 'compareOnlyInOverlapRegion', 'var') || isempty(compareOnlyInOverlapRegion))
+%                 compareOnlyInOverlapRegion = false;
+%             end
+            
+            if( ~exist( 'cmtx', 'var') )
+                cmtx = [];
+            end
+            if( ~exist( 'cmtxi', 'var') )
+                cmtxi = [];
+            end
+
+            % build fixed constraint matrix
+            if( isempty( cmtx ))
+                [ cmtx, ~ ] = this.pc.cmtxFromConstraints( dimXyzListFixed );
+            end
+            if( isempty( cmtxi ))
+                cmtxi = pinv( cmtx );
+            end
+            
+%             [ overlapInds ] = this.pc.overlapMask( dimXyzListFixed );
+%             overlapInds = overlapInds(:);
+            
+            N = this.numDict;
+            
+            costs = zeros( N, 1 );
+            for n = 1:N
+                if( mod( n, 1000 ) == 0)
+                    fprintf( 'task %d of %d\n', n, N );
+                end
+                costs( n )  = this.configCost( [ iniPatch n ], cmtx, cmtxi );
+            end
+            
+            [~,sortIdxs]= sort( costs );
+            bestIdxs = sortIdxs( 1:K );
+            
+        end
+        
+        function [ costListW, costListOL, cmtx, cmtxi ] = patchConfigCostsBrute( this, dimXyzListFixed, patchIdxStartEnd, ...
+                compareOnlyInOverlapRegion, doPerm  )
+
+            
+            % fix the sub-patch locations, changing only the patch indexes
+            % and compute the cost for each of the given patchIndexes
+            %
+            if( ~exist( 'compareOnlyInOverlapRegion', 'var') || isempty(compareOnlyInOverlapRegion))
+                compareOnlyInOverlapRegion = false;
+            end
+            
+            if( ~exist( 'doPerm', 'var') || isempty(doPerm))
+                doPerm = false;
+            end
+            
+            % build fixed constraint matrix
+            [ cmtx, bi ] = this.pc.cmtxFromConstraints( dimXyzListFixed );
+            cmtxi = pinv( cmtx );
+            
+            %             if( compareOnlyInOverlapRegion )
+            [ overlapInds ] = this.pc.overlapMask( dimXyzListFixed );
+            overlapInds = overlapInds(:);
+            %             end
+            
+            nLocs = size( dimXyzListFixed, 1 );
+            N = patchIdxStartEnd(2) - patchIdxStartEnd(1) + 1;
+            
+            if( doPerm )
+                thePerms = perms( 1:nLocs );
+                numPerms = size( thePerms, 1 );
+            else
+                numPerms = 1;
+            end
+            
+            costListW = zeros( N, numPerms );
+            costListOL = zeros( N, numPerms );
+            
+            datSz = [ this.numDict, this.numDict, this.numDict ];
+            n = patchIdxStartEnd(1);
+            index = 1;
+            % compute the cost for each triplet in this list
+            while( n <= patchIdxStartEnd(2))
+                if( mod( n, 1000 ) == 0)
+                    fprintf( 'task %d of %d\n', index, N );
+                end
+                
+                [i,j,k] = ind2sub( datSz, n );
+                if( doPerm )
+                    thesePerms = perms( [ i j k ] );
+                else
+                    thesePerms = [ i j k ];
+                end
+                
+                for m = 1:numPerms
+                    costListW( index, m )  = this.configCost( thesePerms(m, :), cmtx, cmtxi );
+                    costListOL( index, m ) = this.configCost( thesePerms(m, :), cmtx, cmtxi, overlapInds, bi );
+                end
+                n = n + 1;
+                index = index + 1;
+            end
+        end % patchConfigCosts
+
+        function [ cost ] = configCost( this, patchIdx, cmtx, cmtxi, overlapInds, bi )
+            % helper method 
+            
+            if( ~exist( 'bi', 'var') )
+                bi = [];
+            end
+            if( ~exist( 'overlapInds', 'var') )
+                overlapInds = [];
+            end
+
+            b = reshape( this.D2d( patchIdx, : )', [], 1 );
+            if( ~isempty(bi) )
+                x = cmtxi * b;
+                cost = norm( cmtx(overlapInds(bi),:) * x - b(overlapInds(bi)) );
+            else
+                x = cmtxi * b;
+                cost = norm( cmtx * x - b );
+            end
+        end % configCost
+
         function [ costList, cmtx, cmtxi ] = patchConfigCosts( this, dimXyzListFixed, patchIdxList, ...
                         compareOnlyInOverlapRegion )
             % fix the sub-patch locations, changing only the patch indexes
