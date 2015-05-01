@@ -435,13 +435,7 @@ classdef Tid < handle
             global DICTPATH;
             
             N = size( D, 1 );
-            
-            % build ranges
-            dimrangeList = cell( nJobs, 1 );
-            bnds = ceil(linspace( 1, N+1, nJobs+1 ));
-            for i = 1 : length(bnds) - 1
-                dimrangeList{i} = bnds(i) : bnds(i+1)-1;
-            end
+            rangeList = Tid.buildSimMtxStartEndPairs( N, nJobs  );
             
             this.save();
             
@@ -449,35 +443,223 @@ classdef Tid < handle
             use_gpu = 0;
             num_out_args = 1; % translationInvariantHelperSparse has 1 output args
             run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
-           
+            
             varargin = {  repmat( {this.obj_fn}, nJobs, 1), ...
                 repmat( {'this'}, nJobs, 1), ...
-                repmat( {'translationInvariantHelperSparse'}, nJobs, 1), ...
+                repmat( {'translationInvariantHelper_worker'}, nJobs, 1), ...
                 repmat( {num_out_args}, nJobs, 1), ...
                 repmat( {D}, nJobs, 1), ...
-                dimrangeList
-            };
-                %num2cell( 1:nJobs ), ...
+                rangeList
+                };
+            %num2cell( 1:nJobs ), ...
             
             f_out = qsub_dist(fun, 1, use_gpu, ...
                 [], [], run_script, ...
                 varargin{:} );
-
+            
             % assume that cat is efficient with sparse matrices
             % and try to call it just once
-            % * first grab the interesting elements and drop them into a 
+            % * first grab the interesting elements and drop them into a
             %   cell array
-
-            tmp = cell( nJobs, 1 );
-            sumsz = 0;
+            
             for i = 1:nJobs
-                tmp{i} = f_out{i}{1}{1};
-                size(tmp{i})
-                sumsz = sumsz + size( tmp{i}, 1);
+                
+                if( i == 1 )
+                    sim = f_out{i}{1}{1};
+                else
+                    sim = sim + f_out{i}{1}{1};
+                end
             end
             
-            sim = cat( 1, tmp{:} );
+        end
+        
+        function [ sim ] = patchSimilaritiesGen_dist( this, D, nJobs, doSparse )
+            global DICTPATH;
             
+            N = size( D, 1 );
+            rangeList = Tid.buildSimMtxStartEndPairs( N, nJobs  );
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 1; % translationInvariantHelperSparse has 1 output args
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            varargin = {  repmat( {this.obj_fn}, nJobs, 1), ...
+                repmat( {'this'}, nJobs, 1), ...
+                repmat( {'patchSimilaritiesGen_worker'}, nJobs, 1), ...
+                repmat( {num_out_args}, nJobs, 1), ...
+                repmat( {D}, nJobs, 1), ...
+                rangeList, ...
+                repmat( {doSparse}, nJobs, 1) ...
+                };
+            
+            f_out = qsub_dist(fun, 1, use_gpu, ...
+                [], [], run_script, ...
+                varargin{:} );
+            
+            % assume that cat is efficient with sparse matrices
+            % and try to call it just once
+            % * first grab the interesting elements and drop them into a
+            %   cell array
+            
+            for i = 1:nJobs
+                
+                if( i == 1 )
+                    sim = f_out{i}{1}{1};
+                else
+                    sim = sim + f_out{i}{1}{1};
+                end
+            end
+            
+        end
+        
+        function [ simMtx ] = translationInvariantHelper_worker( this, D, startEnd )
+            import net.imglib2.algorithms.matrix.iterator.*;
+            
+            N = size( D, 1 );
+            
+            mi = LowerTriangularMatrixIterator( N );
+            if( ~exist('startEnd','var') || isempty( startEnd ))
+                startEnd = [ 1, mi.getNum()+1 ];
+            end
+            
+            mi.offset( startEnd(1)-1 );
+            
+            numTasks = startEnd(2) - startEnd(1);
+            
+            MM =  max( numTasks, min(10, 0.001.*numTasks) );
+            simMtx = spalloc( N, N, MM );
+            
+            totOverlapRange =  2.*(this.patchSize - 1) + 1;
+            szDiff = this.patchSize - this.dictPatchSize;
+            tmpLo = ((totOverlapRange - 1)/2 - szDiff);
+            tmpHi = ((totOverlapRange - 1)/2 + szDiff);
+            
+            [vorX, vorY] = ndgrid( tmpLo(1):tmpHi(1), tmpLo(2):tmpHi(2));
+            validOverlapInds = sub2ind( totOverlapRange, vorX(:), vorY(:));
+            
+            i = zeros( 1, 'uint64' );
+            
+            while( i < numTasks )
+                
+%                 coords = mi.idxToCoords( mi.next().longValue() );
+
+                if( mod(i,10))
+                    fprintf( 'on task %d of %d\n', i, numTasks );
+                end
+                
+                coords = mi.nextCoord();
+                coords = coords + 1; % from java to matlab indices
+                
+                basePatch = reshape( D( coords(2), : ), this.patchSize );
+                compPatch = reshape( D( coords(1), : ), this.patchSize );
+                
+                xc = normxcorr2_general( basePatch, compPatch);
+                
+                % distance is  -max(cross correlation)
+                dist = 1 - max( xc( validOverlapInds ));
+                
+                if( dist < this.distTol )
+                    simMtx( coords(2), coords(1) ) = dist; %#ok<SPRIX>
+                end
+                
+                i = i + 1;
+            end
+            
+        end
+        
+        function [ simMtx ] = patchSimilaritiesGen_worker( this, D, startEnd, doSparse )
+            import net.imglib2.algorithms.matrix.iterator.*;
+            
+            N = size( D, 1 );
+            
+            mi = LowerTriangularMatrixIterator( N );
+            if( ~exist('startEnd','var') || isempty( startEnd ))
+                startEnd = [ 1, mi.getNum()+1 ];
+            end
+            
+            if( ~exist('doSparse','var') || isempty( doSparse ))
+                doSparse = true;
+            end
+            
+            mi.offset( startEnd(1)-1 );
+            numTasks = startEnd(2) - startEnd(1);
+            
+            if( doSparse )
+                MM =  max( numTasks, min(10, 0.001.*numTasks) );
+                simMtx = spalloc( N, N, MM );
+            else
+%                 simMtx = 1000.* this.distTol .* ones( N, N );
+                simMtx = zeros( N, N );
+            end
+            
+            i = zeros( 1, 'uint64' );
+            while( i < numTasks )
+                
+%                 coords = mi.idxToCoords( mi.next().longValue() );
+
+                if( mod(i,10))
+                    fprintf( 'on task %d of %d\n', i, numTasks );
+                end
+                
+                coords = mi.nextCoord();
+                coords = coords + 1; % from java to matlab indices
+                
+                basePatch = reshape( D( coords(2), : ), this.patchSize );
+                compPatch = reshape( D( coords(1), : ), this.patchSize );
+                
+                dist = this.distanceFun.distance( basePatch, compPatch );
+                
+                if( dist < this.distTol )
+                    simMtx( coords(2), coords(1) ) = dist; %#ok<SPRIX>
+                end
+                
+                i = i + 1;
+            end
+            
+        end
+        
+        function [ sim ] = translationInvariantHelper_worker2( this, D, range )
+            N = size( D, 1 );
+            
+            if( ~exist('range','var') || isempty( range ))
+               range = find( triu( ones( N ), 1)); 
+            end
+            M = length( range );
+            
+            numSp = size(this.tSubPatches,1);
+            
+            M2 = M*N;
+            MM =  max( M2, min(10, 0.01.*M2) );
+            sim = spalloc( N, N, MM );
+            
+            totOverlapRange =  2.*(this.patchSize - 1) + 1;
+            szDiff = this.patchSize - this.dictPatchSize;
+            tmpLo = ((totOverlapRange - 1)/2 - szDiff);
+            tmpHi = ((totOverlapRange - 1)/2 + szDiff);
+            
+            [vorX, vorY] = ndgrid( tmpLo(1):tmpHi(1), tmpLo(2):tmpHi(2));
+            validOverlapInds = sub2ind( totOverlapRange, vorX(:), vorY(:));
+
+            [n,m] = ind2sub( size(D), range );
+            
+            for i = 1:length(range) 
+                
+                basePatch = reshape( D( n(i), : ), this.patchSize );
+                compPatch = reshape( D( m(i), : ), this.patchSize );
+                
+                xc = normxcorr2_general( basePatch, compPatch);
+                
+                % distance is  -max(cross correlation) 
+                dist = 1 - max( xc( validOverlapInds ));
+
+                if( dist < this.distTol )
+                    sim( range(i) ) = dist;  %#ok<SPRIX>
+                end
+
+            end
         end
         
         function [ sim ] = translationInvariantHelperSparse( this, D, dimrange )
@@ -630,10 +812,50 @@ classdef Tid < handle
             fprintf('num nan: %d\n',nnz( isnan( sim )));
             
         end
+
+        function siftFeats = normalizeRotationsSIFT( this )
+            import mpicbg.imagefeatures.*; 
+
+        end
         
     end % methods
 
     methods( Static )
+        
+        function [startEndList,ltmi] = buildSimMtxStartEndPairs( N, nJobs )
+            
+            import net.imglib2.algorithms.matrix.iterator.*;
+            ltmi = LowerTriangularMatrixIterator( N );
+            
+            totNum = ltmi.getNum();
+            avgTasksPerJob = ceil( (totNum) / nJobs );
+            
+            tmp = 1 : avgTasksPerJob : (totNum + 1);
+
+            if( tmp(end) ~= totNum+1 )
+                if( length(tmp) == ( nJobs + 1 ))
+                    tmp(end) = totNum+1;
+                else
+                    tmp = [ tmp, (totNum+1) ];
+                end
+            end
+            
+            startEndList = cell( nJobs, 1 );
+            for i = 1 : length(tmp) - 1
+                startEndList{ i } = [ tmp(i), tmp(i+1) ];
+            end
+            
+        end
+        
+        function rangeList = buildSimMtxRanges( N, nJobs )
+            % build ranges
+            k = find(triu( ones( N, N), 1 ));
+            rangeList = cell( nJobs, 1 );
+            bnds = ceil(linspace( 1, length(k)+1, nJobs+1 ));
+            for i = 1 : length(bnds) - 1
+                rangeList{i} = k( bnds(i) : bnds(i+1)-1 );
+            end
+        end
         
         function [tx,ty] = inferTranslations( patchSize, dictPatchSize )            
             diff = patchSize - dictPatchSize;
