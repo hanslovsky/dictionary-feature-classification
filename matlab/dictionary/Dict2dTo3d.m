@@ -1737,6 +1737,13 @@ classdef Dict2dTo3d < handle
                 b = this.pc.constraintValueList( this.D2d, obj, model );
             end
         end
+        
+        function I = fill3dWith2d( this, dim, xyz, patch)
+            I = zeros( this.sz3d );
+            msk = this.pc.planeMask( xyz, dim, this.f);
+            I( msk > 0 ) = patch( msk(msk>0) );
+        end
+        
     end
     
     methods ( Access = protected )
@@ -1966,13 +1973,6 @@ classdef Dict2dTo3d < handle
             %pmsk = Dict2dTo3d.planeMask( sz, xyz, n );
             pmsk = this.pc.planeMask( sz, xyz, n );
             line = patch( msk( pmsk )); 
-        end
-        
-        function I = fill3dWith2d( sz3d, dim, xyz, f, patch)
-            I = zeros( sz3d );
-            %msk = Dict2dTo3d.planeMaskF( sz3d, xyz, dim, f);
-            msk = this.pc.planeMaskF( sz3d, xyz, dim, f);
-            I( msk > 0 ) = patch( msk(msk>0) );
         end
         
         % Deprecated

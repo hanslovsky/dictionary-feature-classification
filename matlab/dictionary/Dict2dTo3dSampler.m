@@ -37,7 +37,8 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
     end
     
     properties( SetAccess = protected )
-       
+       comparator;
+       D2d_downsampled;
     end
     
     methods
@@ -46,7 +47,7 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
         % D2d - 
         % sz  - size of 2d patches
         % f   - downsampling factor
-        function this = Dict2dTo3dSampler( D2d, sz, f, overlappingPatches, scaleByOverlap )
+        function this = Dict2dTo3dSampler( D2d, sz, f, overlappingPatches, scaleByOverlap, comparator )
             this = this@Dict2dTo3d( D2d, sz, f, overlappingPatches, scaleByOverlap );
             if( this.useSubset )
                 fprintf('Computing insersection matrix inverses...');
@@ -57,6 +58,17 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             if( this.scaleByOverlap )
                 this.paramScales = this.pc.overlapFraction;
             end
+            if( ~exist( 'comparator','var'))
+                comparator = PatchCompare( 'euc' );
+            end
+            this.comparator = comparator;
+            
+            this.D2d_downsampled = this.pc.downsample2dDictByDimSlow( this.D2d );
+            
+            % normalize
+            this.D2d_downsampled = bsxfun(  @rdivide, ...
+                this.D2d_downsampled, ...
+                sqrt(sum( this.D2d_downsampled.^2, 2 ) ));
                 
         end
         
@@ -725,14 +737,24 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
         end
         
-        function [ patchParams, dists, modelList, f_out ] = fitIdxAndModel_dist( this, x, doBest )
+        function [ patchParams, dists, modelList, f_out ] = fitIdxAndModel_dist( this, x, doBest, returnList )
             global DICTPATH;
+            
+            if( ~exist('returnList','var') || isempty( returnList ))
+                returnList = false;
+            end
             
             num_jobs = this.pc.numLocs;
             
-            patchParams = zeros( num_jobs, 1);
-            dists       = zeros( num_jobs, 1);
-            modelList   = cell( num_jobs, 1);
+            if( returnList )
+                patchParams = zeros( num_jobs, 1);
+                dists       = zeros( num_jobs, 1);
+                modelList   = cell( num_jobs, 1);
+            else
+                patchParams = cell( num_jobs, 1);
+                dists       = cell( num_jobs, 1);
+                modelList   = cell( num_jobs, 1);
+            end
             
             this.save();
             
@@ -748,21 +770,29 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
                 num2cell( 1:num_jobs ), ...
                 repmat( {x}, num_jobs, 1), ...
                 repmat( {doBest}, num_jobs, 1), ...
+                repmat( {returnList}, num_jobs, 1 ) ...
                 };
             
             f_out = qsub_dist(fun, 1, use_gpu, ...
                 [], [], run_script, ...
                 varargin{:} );
            
-            for i = 1:num_jobs
-                patchParams(i) = f_out{i}{1}{1};
-                dists(i)       = f_out{i}{1}{2};
-                modelList{i}   = f_out{i}{1}{3};
+            if( returnList )
+                for i = 1:num_jobs
+                    patchParams{i} = f_out{i}{1}{1};
+                    dists{i}       = f_out{i}{1}{2};
+                    modelList{i}   = f_out{i}{1}{3};
+                end                
+            else
+                for i = 1:num_jobs
+                    patchParams(i) = f_out{i}{1}{1};
+                    dists(i)       = f_out{i}{1}{2};
+                    modelList{i}   = f_out{i}{1}{3};
+                end
             end
             
-            
         end
-        
+            
         function [ idx, curdist, models ] = fitIdxAndModel( this, i, x, doBest, returnList, xMsk )
             if( ~exist( 'doBest', 'var' ) || isempty( doBest ))
                 doBest =1;
@@ -773,6 +803,9 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             if( ~exist( 'xMsk', 'var' ))
                 xMsk = [];
             end
+%             if( nargout >=4 )
+%                allDists = zeros( d23.numDict, 1 );
+%             end
             
 %             % v1
 %             rng  = this.pc.constraintVecSubsets(i,:);
@@ -1079,6 +1112,514 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
         end
 
+        function [ patchParams, modelList, pv, patch ] = solveBestK( this, x, K, cutoffFun )
+            if( ~exist( 'cutoffFun', 'var'))
+                cutoffFun = [];
+            end
+            
+            % patchParams = zeros( this.pc.numLocs, K );
+            patchParams = cell( this.pc.numLocs, 1 );
+            
+            modelList   = cell ( this.pc.numLocs, K );
+            pv = zeros( prod(this.pc.sz3d), 1);
+            
+            patch = [];
+            
+            % make sure x is a column vector
+            x = vecToRowCol( x, 'col');
+            
+            % solve for z-patches only
+            zIndices = find(this.pc.dimXyzList(:,1) == 3);
+            for k = 1:length( zIndices )
+                
+                j = zIndices( k );
+                fprintf('fitting model for location %d of %d\n', ...
+                    j, this.pc.numLocs );
+                
+                [ dictIdxs, dictCosts, models, msk ] = this.bestKdicts( x, j, K );
+                if( ~isempty( cutoffFun ))
+                    Kfun = cutoffFun( dictCosts, K );
+                    patchParams{k} = dictIdxs( 1:Kfun );
+                else
+                    patchParams{k} = dictIdxs;
+                end
+                
+                if( ~isempty(this.intXfmModelType))
+                    modelList( j, : ) = models;
+                end
+                
+                mskHR = this.pc.planeMaskI( j );
+                %nnz(msk > 0)
+                length( this.D2d( dictIdxs, :))
+                
+                % build initial high-res patch
+                % pv( mskHR > 0 ) = repmat( this.D2d( dictIdxs(1), :), [1 1 this.f]);
+                
+            end
+        end
+        
+        function [ patchParams, modelList, pv, patch ] = solveBestK_maybeBad( this, x, K, cutoffFun )
+            % Solve for patch parameters from an observation x by:
+            %   1)  solving for 2d patches that fit z-plane sub patches
+            %   2)  estimate a high-res patch from those 
+            %   3)  fit the remaining patches to that HR patch
+            %
+            %   This seems like a bad idea, actually -JB (2015 Mar 02)
+            %   Probably preferable to fit all patches directly to the
+            %       observation
+            
+            if( ~exist( 'cutoffFun', 'var'))
+                cutoffFun = [];
+            end
+            
+            % patchParams = zeros( this.pc.numLocs, K );
+            patchParams = cell( this.pc.numLocs, 1 );
+            
+            modelList   = cell ( this.pc.numLocs, K );
+            pv = zeros( prod(this.pc.sz3d), 1);
+            
+            patch = [];
+            
+            % make sure x is a column vector
+            x = vecToRowCol( x, 'col');
+            
+            % solve for z-patches only
+            zIndices = find(this.pc.dimXyzList(:,1) == 3);
+            for k = 1:length( zIndices )
+                
+                j = zIndices( k );
+                fprintf('fitting model for location %d of %d\n', ...
+                    j, this.pc.numLocs );
+                
+                [ dictIdxs, dictCosts, models, msk ] = this.bestKdicts( x, j, K );
+                if( ~isempty( cutoffFun ))
+                    Kfun = cutoffFun( dictCosts, K );
+                    patchParams{k} = dictIdxs( 1:Kfun );
+                else
+                    patchParams{k} = dictIdxs;
+                end
+                
+                if( ~isempty(this.intXfmModelType))
+                    modelList( j, : ) = models;
+                end
+                
+                mskHR = this.pc.planeMaskI( j );
+                %nnz(msk > 0)
+                length( this.D2d( dictIdxs, :))
+                
+                % build initial high-res patch
+                % pv( mskHR > 0 ) = repmat( this.D2d( dictIdxs(1), :), [1 1 this.f]);
+                
+            end
+            
+            % now do the rest
+            for j = length( zIndices )+1 : this.pc.numLocs
+                
+                fprintf('fitting model for location %d of %d\n', ...
+                    j, this.pc.numLocs );
+                
+                % DO NOT FIT TO ESTIMATED HIGH-RES PATCH! 
+                % [ dictIdxs, distList, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
+                
+                % FIT TO OBSERVATION
+                [ dictIdxs, distList, models ] = this.fitIdxAndModel( j, pv, 0, 1 );
+                
+                if( ~isempty( cutoffFun ))
+                    Kfun = cutoffFun( distList, K );
+                    patchParams{ j } = dictIdxs( 1:Kfun );
+                else
+                    % patchParams( j, : ) = dictIdxs(1:K);
+                    patchParams{ j } = dictIdxs(1:K);
+                end
+                
+                if( ~isempty(this.intXfmModelType))
+                    modelList( j, : ) = models( 1:K );
+                end
+            end
+            
+            if( nargout > 3 )
+                patch = reshape( pv, this.sz3d );
+            end
+            
+        end
+        
+        function [ bestPatchParams, currentModels, pvOut ] = greedySubSearch( this, x, iniPatchParams, iniModels,...
+                maxOuterIters, maxNoChangeIters )
+            
+            if( ~exist('maxOuterIters','var') || isempty(maxOuterIters))
+                maxOuterIters = 200;
+            end
+            if( ~exist('maxNoChangeIters','var') || isempty(maxNoChangeIters))
+                maxNoChangeIters = 20;
+            end
+            
+            [ numLocs, K ] = size( iniPatchParams );
+            
+            if( numLocs ~= this.pc.numLocs )
+                error('number of rows of iniPatchParams must equal this.pc.numLocs');
+            end
+            
+%             currentParams = iniPatchParams( :, 1 );
+            currentParams = cellfun( @(x)(x(1)), iniPatchParams );
+            currentModels = iniModels( :, 1 );
+            
+            [ pv ] = this.patchFromParams( currentParams, currentModels );
+            currentCost = norm( pv - x );
+            
+            numUnchanged = 0;
+            for outeriter = 1:maxOuterIters
+                
+                fprintf('iteration %d of %d\n', outeriter, maxOuterIters );
+                
+                % shuffle order to optimize locations
+                innerList = randperm( numLocs );
+                
+                % loop over locations
+                changed = false;
+                for i = 1:numLocs
+                    j = innerList( i );
+                    
+                    % it is possible there is only one possible dictionary
+                    % element for location j.  if so, ski;
+                    if( length( iniPatchParams{j}) == 1 )
+                        continue;
+                    end
+                    
+                    % loop over the K possible patches at location j
+                    if( iscell( currentParams) )
+                        bestPatchIdx = currentParams{ j };
+                    else
+                        bestPatchIdx = currentParams( j );
+                    end
+                    
+                    tmpParams = currentParams;
+                    tmpModels = currentModels;
+                    
+                    changedInner = false;
+                    for k = setdiff( 1:K, find( iniPatchParams{j} == bestPatchIdx) )
+                        
+                        currentIdx = iniPatchParams( j, k );
+                        % diff for debug only
+%                         diff = zeros( size( tmpParams ));
+%                         diff( j ) = 1;
+                        
+                        tmpParams( j ) = currentIdx;
+                        tmpModels{ j } = iniModels{ j, k };
+%                         [ tmpParams diff ]
+%                         pause;
+                        
+                        %thismodel = fit( bexp, AxR, this.intXfmModelType );
+                        
+                        [ pv_tmp ] = this.patchFromParams( tmpParams, tmpModels );
+                        cost = norm( pv_tmp - x );
+                            
+                        if( cost < currentCost )
+
+%                             fprintf( 'old %f vs new %f costs at location %d\n', ...
+%                                             currentCost, cost );
+                            if( cost < currentCost )
+                                fprintf( 'cost improved from %f to %f at location %d\n', ...
+                                            currentCost, cost );
+                                changedInner = true;
+                                currentCost = cost;
+                            end
+                            
+                        end
+                    end % parameters
+                    
+                    if( changedInner )
+                        currentParams = tmpParams;
+                        currentModels = tmpModels;
+                        changed = true;
+                    end
+                    
+                end % inner loop
+                
+                % increment changed counter
+                if( changed )
+                    numUnchanged = 0;
+                else
+                    numUnchanged = numUnchanged + 1;
+                end
+                
+                % nothing has changed for awhile, so break early
+                if( numUnchanged > maxNoChangeIters )
+                    fprintf( 'no change, breaking early\n');
+                    break;
+                end
+                
+            end % outer loop
+            
+            bestPatchParams = currentParams;
+            pvOut = this.patchFromParams( bestPatchParams, currentModels );
+            
+        end % greedySubSearch
+       
+        function [ distList, models ] = toFeatures_dist( this, X, num_jobs, isLrObs, doLoad )
+            % rows of X are observations
+            
+            global DICTPATH;
+            
+            if( ~exist('isLrObs','var') || isempty(isLrObs))
+               isLrObs = false; 
+            end
+            if( ~exist('doLoad','var') || isempty(doLoad))
+               doLoad = true; 
+            end
+            if( isLrObs )
+                funName = 'fitToLowResObservation'
+            else
+                funName = 'toFeatures'
+            end
+            
+            N = size( X, 1 );
+            M = size( X, 2 );
+            
+            if( ~exist('num_jobs','var') || isempty(num_jobs))
+                num_jobs = N;
+                
+            else
+                [ ranges, tasksPerWorker ] = divideTasks( N, num_jobs );
+            end
+            
+            % split up the observations of n
+            Xarg = mat2cell( X, tasksPerWorker, M);
+            
+            
+            distList = zeros( N, this.pc.numLocs, this.numDict);
+            size( distList )
+            
+            if( ~isempty(this.intXfmModelType))
+                models = cell( N, this.pc.numLocs, this.numDict );
+            else
+                models = {};
+            end
+            
+            this.save();
+            
+            fun = @run_obj_method_dist;
+            use_gpu = 0;
+            num_out_args = 2; % toFeatures has 2 output args
+            run_script = fullfile( DICTPATH, 'bin', 'my_run_runObjMethod.sh');
+            
+            varargin = {  repmat( {this.obj_fn}, num_jobs, 1), ...
+                repmat( {'this'}, num_jobs, 1), ...
+                repmat( {funName}, num_jobs, 1), ...
+                repmat( {num_out_args}, num_jobs, 1), ...
+                Xarg, ...
+                };
+            
+            if( doLoad )
+                f_out = qsub_dist(fun, 1, use_gpu, ...
+                    [], [], run_script, ...
+                    varargin{:} );
+                
+                for i = 1:num_jobs
+                    
+                    range = ranges{i};
+                    distList( range(1):range(2), :, : ) = f_out{i}{1}{1};
+                    
+                    if( ~isempty(this.intXfmModelType))
+                        models(ranges(1):ranges(2), :, : ) = f_out{i}{1}{2};
+                    end
+                end
+            else
+                 f_out = qsub_dist_noLoad(fun, 1, use_gpu, ...
+                    [], [], run_script, ...
+                    varargin{:} );
+%                  fprintf( '%s\n', f_out{1} );
+                 
+                 distList = f_out;
+                 models = {};
+            end
+            
+        end
+        
+        function [ distList, models ] = toFeatures( this, X, xMsk, isObs )
+            % rows of X are observations
+            
+            if( ~exist( 'xMsk', 'var' ))
+                xMsk = [];
+            end
+            if( ~exist( 'isObs', 'var' ))
+                isObs = false;
+            end
+            
+            numObs = size( X, 1 );
+            numLocs = this.pc.numLocs;
+            
+            if( ~isempty(this.intXfmModelType))
+                models = cell( numObs, numLocs, this.numDict );
+            else
+                models = [];
+            end
+            
+            if( isObs )
+                
+                %  [ dictIdxs, dictCosts, models, x, ~, ~ ] = this.fitToLowResObservation( x, i  );
+                %                 distList( j, i, : ) = dictCosts;
+                
+                [  distList, models ] = this.fitToLowResObservation( X );
+                
+            else
+                
+                distList = zeros( numObs, numLocs, this.numDict);
+                
+                for j = 1:numObs
+                    x = X(j,:)';
+                    
+                    for i = 1:numLocs
+                        
+                        % get the sub-patch of the observation
+                        if( isempty( xMsk ))
+                            AxR = this.pc.patchProject( i, x );
+                        else
+                            AxR = x;
+                        end
+                        
+                        if( var( AxR ) < 0.0001 )
+                            AxR = AxR + 0.0001.*randn(size(AxR));
+                        end
+                        
+                        for n = 1:this.numDict
+                            
+                            if( mod( n, this.verboseEvery) == 0 )
+                                fprintf(' Dict2dTo3dSampler.fitIdxAndModel %d of %d\n', n, this.numDict);
+                            end
+                            
+                            bexp = this.D2d(n,:)';
+                            
+                            % downsample the dictionary if necessary
+                            if( ~isempty( xMsk ))
+                                if( isscalar( xMsk ))
+                                    bexp = PatchConstraints.downsampleByMaskDim( bexp, this.pc.planeMaskLRI( i ) );
+                                else
+                                    bexp = PatchConstraints.downsampleByMaskDim( bexp, xMsk );
+                                end
+                                bexp = bexp(:);
+                            end
+                            
+                            % compute the distance
+                            if( ~isempty(this.intXfmModelType))
+                                thismodel = fit( bexp, AxR, this.intXfmModelType, this.fitParams{:} );
+                                models{ j, i, n } = thismodel;
+                                distList( j, i, n ) = this.comparator.distance( AxR, feval( thismodel, bexp ));
+                            else
+                                distList( j, i, n ) = this.comparator.distance( AxR, bexp );
+                            end
+                            
+                        end
+                        
+                    end % locations loop
+                    
+                end % observations loop
+            end % isObs?
+        end % function
+        
+        function [ dictCosts, models ] = fitToLowResObservation( this, xin  )
+            % observations should be rows of xin
+            
+            nLocs = this.pc.numLocs;
+            N = size( xin, 1 );
+            dictCosts = zeros( N, nLocs, this.numDict );
+            
+            models = [];
+            if( ~isempty(this.intXfmModelType))
+                models = cell( N, nLocs, this.numDict );
+            end
+            
+            
+            for n = 1 : N
+                for i = 1 : nLocs
+                    [ dictIdxs_n, dictCosts_n, models_n ] = bestKdicts( this, xin(n,:), i, this.numDict );
+                    dictCostsTmp = dictCosts_n(1 + length(dictCosts_n) - dictIdxs_n(end:-1:1));
+                    dictCosts( n, i, : ) = dictCostsTmp;
+                    
+                    if( ~isempty(this.intXfmModelType))
+                        models( n, i, : ) = models_n; %#ok<AGROW>
+                    end
+                end
+            end
+        end
+        
+        function [ dictIdxs, dictCosts, models, x, msk, didTp ] = bestKdicts( this, xin, i, K  )
+            % expects xin to be a row vector
+            
+            %             if( ~exist( 'isLR', 'var' ) || isempty( isLR ))
+            %                 isLR = true;
+            %             end
+            
+            % make sure x is a row vector
+            x = vecToRowCol( xin, 'row');
+            
+            dists  = nan( this.numDict, 1 );
+            models = {};
+            
+            msk = this.pc.planeMaskLRI( i );
+            
+            [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
+            x = [x(:)]';
+            
+            % normlize x
+%             x = x ./ norm( x );
+            
+            if( numel( x ) == size( this.D2d, 2 ) )
+                D = this.D2d;
+            else
+                D = this.D2d_downsampled;
+            end
+            
+            % check size of K
+            K = min( K, size( D, 1 ));
+            
+            if( ~isempty(this.intXfmModelType))
+                fprintf('fitting model: %s\n', this.intXfmModelType);
+                models = cell( this.numDict, 1 );
+                for n = 1 : this.numDict
+                    bexp      = D(n,:);
+                    models{n} = fit( bexp', x', this.intXfmModelType, this.fitParams{:} );
+                    this.comparator.distance( x', feval( models{n}, bexp' ) );
+                end
+            else
+                dists =  this.comparator.distances( x, D );
+            end
+            
+            [ dictCosts, is ] = sort( dists );
+            dictCosts = dictCosts(1:K);
+            
+            dictIdxs = is( 1:K );
+            
+            if( ~isempty(this.intXfmModelType))
+                models = models( is(1:K) );
+            end
+        end
+    
+        function [ dictParams, xhat, dictCost ] = dictParamsLasso( this, xin, loci, params )
+            % uses the spams toolbox's implementation of lasso to estimate
+            % a sparse coefficient vector that explains the observation 'x'
+            % at location 'loci' using the 2d dictionary 
+            
+            x = vecToRowCol( xin, 'row');
+            msk = this.pc.planeMaskLRI( loci );
+            
+            [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
+            x = x(:);
+            
+            if( numel( x ) == size( this.D2d, 2 ) )
+                D = this.D2d;
+            else
+                D = this.D2d_downsampled;
+            end
+            
+            dictParams = mexLasso( x, D', params );
+            if( nargout > 1 )
+               xhat = D' * dictParams;
+            end
+            if( nargout > 2 )
+               dictCost =  norm( x - xhat );
+            end
+        end
+           
     end
     
     methods( Static )

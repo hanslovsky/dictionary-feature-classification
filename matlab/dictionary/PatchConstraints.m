@@ -525,6 +525,7 @@ classdef PatchConstraints < handle
             b = zeros( M, 1 );
             brng = 1:patchNumElem;
             for i = 1:N
+                
                 if( ndim <= 1)
                     % if idxList is a column vector, assume that
                     % the indices are given in the same order as
@@ -538,15 +539,21 @@ classdef PatchConstraints < handle
                     
                     start = patchNumElem * (j - 1) + 1;
                     brng = start : start + patchNumElem - 1;
-                    
-                end
-                
-                if( isempty( model ) || isempty(model{i}))
-                    b( brng ) = patchMtx( idx, : );
+                elseif( size( idxList, 2 ) == size( patchMtx, 1 )) 
+                    idx = idxList( i, : )';
                 else
-                    b( brng ) = feval( model{i}, patchMtx( idx, : ));
+                    error( 'invalid index type' );
                 end
                 
+                if( length( idx ) > 1 )
+                    b( brng ) = patchMtx' * idx;
+                else
+                    if( isempty( model ) || isempty(model{i}))
+                        b( brng ) = patchMtx( idx, : );
+                    else
+                        b( brng ) = feval( model{i}, patchMtx( idx, : ));
+                    end
+                end
                 brng = brng + patchNumElem;
             end
         end
