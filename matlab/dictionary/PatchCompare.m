@@ -1,14 +1,18 @@
 classdef PatchCompare < handle
    
     properties( Constant  )
-        methodOptions = { 'euc', 'sad', 'ncc' };
         % euc - euclidean distance 
         % sad - sum absolute distances
         % ncc - normalized cross correlation
+        % cos - 1 - cosine similarity
+        % dot - dot product (un-normalized), DEAL WITH IT
+        % nccgen - generalized ncc
+        methodOptions = { 'euc', 'sad', 'ncc', 'cos', 'dot', ...
+                          'nccgen' };
     end
     
     properties
-        method = 'euc';  % euclidean norm
+        method = 'euc';  % the distance measure (default - euclidean norm)
     end
     
     methods
@@ -29,6 +33,8 @@ classdef PatchCompare < handle
                     fun = @PatchCompare.distNCC;
                 case 'sad'
                     fun = @PatchCompare.distSAD;
+                case 'dot'
+                    fun = @PatchCompare.distDOT;
                 otherwise
                     error( 'invalid distance method');
             end
@@ -38,6 +44,8 @@ classdef PatchCompare < handle
             if( strcmp( this.method, 'euc'))
                 dists = this.distances( X, Y );
             elseif( strcmp( this.method, 'ncc'))
+                dists = this.distances( X, Y );
+            elseif( strcmp( this.method, 'dot'))
                 dists = this.distances( X, Y );
             else
                 dists = pdist2( X, Y, this.distFunHandle() );
@@ -56,8 +64,16 @@ classdef PatchCompare < handle
                 dists = pdist2( x, Y, 'correlation' );
                 dists = vecToRowCol( double(dists), 'row');
                 
+            elseif( strcmp( this.method, 'cos'))
+                dists = pdist2( x, Y, 'cosine' );
+                dists = vecToRowCol( double(dists), 'row');
+                
+            elseif( strcmp( this.method, 'dot'))
+                dists = x * Y';
+                dists = vecToRowCol( double(dists), 'row');
+                
             else
-                %                 fprintf('distance\n');
+                % fprintf('distance\n');
                 if( numel(x) ~= size( Y, 2))
                     error( 'invalid sized for x and Y' );
                 end
@@ -79,6 +95,8 @@ classdef PatchCompare < handle
                     dist = PatchCompare.distSAD( x, y );
                 case 'ncc'
                     dist = PatchCompare.distNCC( x, y );
+                case 'dot'
+                    dist = PatchCompare.distDOT( x, y );
                 otherwise
                     error('invalid method');
             end
@@ -103,6 +121,12 @@ classdef PatchCompare < handle
             cc = corrcoef( x, y );
             dist = 1 - cc(1,2);
         end
+        
+        function dist = distDOT( x, y )
+            % Normalized dot
+            dist = ( x * y );
+        end
+        
     end
     
 end
