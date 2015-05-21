@@ -35,6 +35,8 @@ classdef Dict2dTo3d < handle
         constraintMtxY;
         constraintMtxZ;
         
+        paramModels;
+        
         % 
         p2dFill3d;
         
@@ -69,7 +71,7 @@ classdef Dict2dTo3d < handle
     
     methods
 
-        function this = Dict2dTo3d( D2d, sz, f, overlappingPatches, scaleByOverlap )
+        function this = Dict2dTo3d( D2d, sz, f, overlappingPatchesOrPc, scaleByOverlap )
         % Constructor
         % D2d - 
         % sz  - size of 2d patches
@@ -119,11 +121,21 @@ classdef Dict2dTo3d < handle
 %             [dList, xyzList] = ndgrid( 1:3, this.pairLocRng);
 %             this.dimXyzList = [ dList(:), xyzList(:) ];
             
-            if( exist('overlappingPatches','var'))
-                this.overlappingPatches = overlappingPatches;
-            end
-            if (exist('scaleByOverlap','var') && ~isempty(scaleByOverlap))
-                this.scaleByOverlap = scaleByOverlap;
+            if( isa( overlappingPatchesOrPc, 'PatchConstraints'))
+                
+                this.pc = overlappingPatchesOrPc;
+                this.f = this.pc.f;
+                
+            else
+                if( exist('overlappingPatches','var'))
+                    this.overlappingPatches = overlappingPatchesOrPc;
+                end
+                if (exist('scaleByOverlap','var') && ~isempty(scaleByOverlap))
+                    this.scaleByOverlap = scaleByOverlap;
+                end
+                if( ~isa( this, 'Dict2dTo3dSamplerGen' ))
+                    this.iniPatchConstraints();
+                end
             end
             
             % remove low variance (ie uninteresting) dictionary
@@ -131,9 +143,6 @@ classdef Dict2dTo3d < handle
             
             % use a PatchConstraints object to compute
             % the constraint matrix once
-            if( ~isa( this, 'Dict2dTo3dSamplerGen' ))
-                this.iniPatchConstraints();
-            end
 
             %this.buildIniLocs();
         end
@@ -527,7 +536,7 @@ classdef Dict2dTo3d < handle
                  dim = dims(n);
                  xyz = xyzs(n);
                  %msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f, 0 );
-                 msk = this.pc.planeMask( this, xyz, dim, this.f, 0 );
+                 msk = this.pc.planeMask( dim, xyz, this.f, 0 );
                  
                  thisConstraint = zeros( size(msk) );
                  dictElem = this.D2d( idxs(n), : );
@@ -584,12 +593,19 @@ classdef Dict2dTo3d < handle
 
         function [ pv, patch, cmtx, b ] = patchFromParams( this, nodeOrList, models )
             if( ~exist('models','var'))
-            	models = d23.paramModels;
+                if( ~isempty( this.paramModels ))
+                    models = this.paramModels;
+                else
+                    models = {};
+                end
             end
-            if( ~isempty(this.pc))
+            if( ~isempty(this.pc.cmtxInv))
+                fprintf('using patchFromParamsPre\n');
                 [ pv, patch, cmtx, b ] = patchFromParamsPre( this, nodeOrList, models );
             else
-                [ pv, patch, cmtx, b ] = patchFromParamsComp( this, nodeOrList, models);
+                fprintf('using patchFromParamsComp\n');
+                [ pv, patch, b ] = patchFromParamsComp( this, nodeOrList, models);
+                cmtx = this.pc.cmtx;
             end
         end
         
@@ -678,15 +694,58 @@ classdef Dict2dTo3d < handle
                     end
                 else
                     pv = cmtxi * b;
-                    if( nargout > 1 )
+                    if( nargout > 1 && (prod(this.sz3d) == numel(pv)) )
                         patch = reshape( pv, this.sz3d );
                     end
                 end
                 
             end
         end
-
-        function [ pv, patch, cmtx, b ] = patchFromParamsComp( this, splNodeIn )
+        
+        function [ pv, patch, b ] = patchFromParamsComp( this, splNodeIn, models )
+            % Compute patch from parameters by solving a linear system of
+            % 
+            
+            if( ~exist('models','var'))
+                models = {};
+            end
+            patch = [];
+            pv = [];
+                
+            %fprintf('patch from precomputed constraints\n');
+            if( isempty( splNodeIn ))
+                return;
+            end
+            
+            docell = 0;
+            if( ~iscell( splNodeIn ))
+                splNodeList = { splNodeIn };
+            else
+                docell = 1;
+                splNodeList = splNodeIn;
+                pv    = cell( length(splNodeList), 1 );
+                patch = cell( length(splNodeList), 1 );
+            end
+                
+            for n = 1:length(splNodeList)
+                splNode = splNodeList{ n };
+                b = this.constraintValue( splNode, models );
+                
+                if( docell )
+                    pv{n} = lsqr( this.pc.cmtx, b);
+                    if( nargout > 1 )
+                        patch{n} = reshape( pv{n}, this.sz3d );
+                    end
+                else
+                    pv = lsqr( this.pc.cmtx, b);
+                    if( nargout > 1 && (prod(this.sz3d) == numel(pv)) )
+                        patch = reshape( pv, this.sz3d );
+                    end
+                end
+            end
+        end
+        
+        function [ pv, patch, cmtx, b ] = patchFromParamsCompBad( this, splNodeIn, models )
         % splNode must be a sortedTreeNode< SubPatch2dLocation >   
             if( isempty( splNodeIn ))
                 patch = [];
@@ -742,7 +801,7 @@ classdef Dict2dTo3d < handle
                     %pause;
                     
                     %msk = Dict2dTo3d.planeMaskF( this.sz3d, xyz, dim, this.f);
-                    msk = this.pc.planeMask( this, xyz, dim, this.f);
+                    msk = this.pc.planeMask( dim, xyz, this.f);
                     
                     for j = 1:prod(this.sz2d)
                         cmtx( k, (msk == j) ) = 1;
@@ -1041,7 +1100,7 @@ classdef Dict2dTo3d < handle
             for i = 1:length(xyz)
                 patch = reshape( this.D2d( patchIdxs(d(i),xyz(i)), : ), this.sz2d );
                 %constraints( Dict2dTo3d.planeMask( szdown, xyz(i), d(i) )) = this.summer2Dxy( patch, this.f );
-                constraints( this.pc.planeMask( szdown, xyz(i), d(i) )) = this.summer2Dxy( patch, this.f );
+                constraints( this.pc.planeMask( d(i), xyz(i), this.f )) = this.summer2Dxy( patch, this.f );
             end
         end
         
@@ -1049,7 +1108,7 @@ classdef Dict2dTo3d < handle
             szSm3 = this.sz3d ./ this.f;
             szSm2 = this.sz2d ./ this.f;
             %planeMask = Dict2dTo3d.planeMask( szSm3, xyz, d );
-            planeMask = this.pc.planeMask( szSm3, xyz, d );
+            planeMask = this.pc.planeMask( d, xyz, this.f );
             c = reshape( constraints( planeMask ), szSm2 );
         end
         
@@ -1402,7 +1461,7 @@ classdef Dict2dTo3d < handle
             for i = 1 : numLocs
                 thisdim = dimXyzListFixed( i, 1 );
                 thisxyz = dimXyzListFixed( i, 2 );
-                msk = this.pc.planeMask( thisxyz, thisdim, this.f );
+                msk = this.pc.planeMask( thisdim, thisxyz, this.f );
                 for j = 1:patchNumElem
                     cmtx( k, (msk==j) ) = 1;
                     k = k + 1;
@@ -1439,7 +1498,7 @@ classdef Dict2dTo3d < handle
                 
                 % TODO - dont recompute this msk every time
                 % msk = Dict2dTo3d.planeMaskF( this.sz3d, thisxyz, thisdim, this.f );
-                msk = this.pc.planeMask( thisxyz, thisdim, this.f );
+                msk = this.pc.planeMask( thisdim, thisxyz, this.f );
             
                 for j = 1:patchNumElem
                     
@@ -1505,8 +1564,8 @@ classdef Dict2dTo3d < handle
             %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
             
             %%
-            pm1 = this.pc.planeMask( xyz1, n1, this.f );
-            pm2 = this.pc.planeMask( xyz2, n2, this.f );
+            pm1 = this.pc.planeMask( n1, xyz1, this.f );
+            pm2 = this.pc.planeMask( n2, xyz2, this.f );
             overlap = (pm1 > 0) & (pm2 > 0);
            
             [cmtx1, b1] = Dict2dTo3d.contraintsFromMask( p1, overlap, pm1 );
@@ -1565,8 +1624,8 @@ classdef Dict2dTo3d < handle
                     
                     %pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
                     %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
-                    pm1 = this.pc.planeMask( sz3, xyz1, n1, this.f );
-                    pm2 = this.pc.planeMask( sz3, xyz2, n2, this.f );
+                    pm1 = this.pc.planeMask( n1, xyz1, this.f );
+                    pm2 = this.pc.planeMask( n2, xyz2, this.f );
                     overlap = (pm1 > 0) & (pm2 > 0);
                     
                     [ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
@@ -1647,8 +1706,8 @@ classdef Dict2dTo3d < handle
                     
                     %pm1 = Dict2dTo3d.planeMaskF( sz3, xyz1, n1, this.f );
                     %pm2 = Dict2dTo3d.planeMaskF( sz3, xyz2, n2, this.f );
-                    pm1 = this.pc.planeMask( sz3, xyz1, n1, this.f );
-                    pm2 = this.pc.planeMask( sz3, xyz2, n2, this.f );
+                    pm1 = this.pc.planeMask( n1, xyz1, this.f );
+                    pm2 = this.pc.planeMask( n2, xyz2, this.f );
                     overlap = (pm1 > 0) & (pm2 > 0);
                     
                     [ cmtx1, idxs1 ] = Dict2dTo3d.contraintsMtx( overlap, pm1 );
@@ -1738,9 +1797,10 @@ classdef Dict2dTo3d < handle
             end
         end
         
-        function I = fill3dWith2d( this, dim, xyz, patch)
-            I = zeros( this.sz3d );
-            msk = this.pc.planeMask( xyz, dim, this.f);
+        function [I,msk] = fill3dWith2d( this, dim, xyz, patch)
+            fprintf( 'Dict2dTo3d - fill3dWith2d\n' );
+            I = zeros( this.pc.sz3d );
+            msk = this.pc.planeMask( dim, xyz, this.f);
             I( msk > 0 ) = patch( msk(msk>0) );
         end
         
@@ -1945,8 +2005,8 @@ classdef Dict2dTo3d < handle
             
             %msk1 = Dict2dTo3d.planeMask( sz, xyz1, n1);
             %msk2 = Dict2dTo3d.planeMask( sz, xyz2, n2);
-            msk1 = this.pc.planeMask( sz, xyz1, n1);
-            msk2 = this.pc.planeMask( sz, xyz2, n2);
+            msk1 = this.pc.planeMask( n1, xyz1, this.f );
+            msk2 = this.pc.planeMask( n2, xyz2, this.f );
             msk = (msk1 > 0) & (msk2 > 0);
 
             if( nargout == 1)
@@ -1971,7 +2031,7 @@ classdef Dict2dTo3d < handle
         function line = patchIntersectionFromMask( patch, xyz, n, msk )
             sz = size( msk );
             %pmsk = Dict2dTo3d.planeMask( sz, xyz, n );
-            pmsk = this.pc.planeMask( sz, xyz, n );
+            pmsk = this.pc.planeMask( n, xyz );
             line = patch( msk( pmsk )); 
         end
         

@@ -6,6 +6,7 @@ classdef PatchConstraints < handle
         f;  % downsampling factor
         sz2d;
         sz3d;
+        sz3dHR;
         
         numConstraints;
         numLocs;
@@ -42,6 +43,8 @@ classdef PatchConstraints < handle
         % fraction of this location that
         % overlaps with field-of-view
         overlapFraction;   
+        
+        centered = false;
     end
     
     properties
@@ -49,12 +52,13 @@ classdef PatchConstraints < handle
         overlappingFull = 1;
         % aBigNumber = 1000;
         
-        doSparseCmtx = 0;
+        doSparseCmtx = true;
     end
    
     methods
         
-        function this = PatchConstraints( sz, f, overlappingPatches, scaleByOverlap, diffsz2d )
+        function this = PatchConstraints( sz, f, overlappingPatches, scaleByOverlap, diffsz2d, ...
+                            overlappingFull )
         % Constructor
             this.f    = f;
             if (~exist('overlappingPatches','var') || isempty(overlappingPatches))
@@ -64,6 +68,12 @@ classdef PatchConstraints < handle
             end
             if (exist('scaleByOverlap','var') && ~isempty(scaleByOverlap))
                 this.scaleByOverlap = scaleByOverlap;    
+            end
+            
+            if (~exist('overlappingFull','var') || isempty(overlappingFull))
+                this.overlappingFull = true;
+            else
+                this.overlappingFull = overlappingFull;
             end
             
             if( length( sz ) > 2 )
@@ -85,8 +95,15 @@ classdef PatchConstraints < handle
                 this.sz2d = diffsz2d;
             end
             
-            this.iniLocs();
-
+            % Subclasses are responsible for calling iniLocs()
+            % in their own constructors.  This allows
+            % parameters that can affect its outcome
+            % to be set first.
+            if( strcmp(class( this), 'PatchConstraints')) %#ok<STISA> 
+                % cant use isa because it has the wrong behavior for
+                % subclasses
+                this.iniLocs();
+            end
         end
         
         function setOverlappingFull( this, overlappingFull )
@@ -134,7 +151,12 @@ classdef PatchConstraints < handle
             numPatchLocs   = size( this.dimXyzList, 1 );
             this.overlapFraction = zeros( numPatchLocs, 1);
             
-            this.cmtx = zeros( this.numConstraints, numVariables );
+            if( this.doSparseCmtx )
+                this.cmtx = spalloc( this.numConstraints, numVariables, this.numConstraints .* this.f );
+            else
+                this.cmtx = zeros( this.numConstraints, numVariables );
+            end
+            
             this.locToConstraint = false( numPatchLocs, this.numConstraints );
             this.constraintVecSubsets = false( numPatchLocs, this.numConstraints );
             
@@ -168,7 +190,12 @@ classdef PatchConstraints < handle
                 this.cmtxInv = pinv( this.cmtx );
             end
         end
-               
+
+        function cmtxToSparse( this )
+            this.cmtx = sparse( this.cmtx );
+            this.doSparseCmtx = true;
+        end
+        
         function [ H, f, A, bineq, Aeq, beq, lb, ub ] = buildQuadProg( this, b, constrainScalesPos, ...
                                                     constrainHrMinMax )
             f = [];
@@ -280,7 +307,8 @@ classdef PatchConstraints < handle
         
         function [constraints, bi] = cmtxFromConstraints( this, obj )
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
-                [constraints, bi] = this.cmtxFromConstraintsNode( obj );
+                [constraints ] = this.cmtxFromConstraintsNode( obj );
+                bi = [];
             else
                 [constraints, bi]= this.cmtxFromConstraintsList( obj );
             end
@@ -438,6 +466,9 @@ classdef PatchConstraints < handle
         end
         
         function b = constraintValue( this, patchMtx, obj, model )
+            if( ~exist( 'model','var') )
+                model = [];
+            end
             if( isa( obj, 'net.imglib2.algorithms.opt.astar.SortedTreeNode'))
                 b = this.constraintValueNode( patchMtx, obj, model );
             else
@@ -504,6 +535,7 @@ classdef PatchConstraints < handle
         function b = constraintValueList( this, patchMtx, idxList, model )
             % idxList must be in the same order
             
+            fprintf('PatchConstraints: constraintValueList\n');
             if( ~exist( 'model','var') )
                 model = [];
             end
@@ -576,6 +608,93 @@ classdef PatchConstraints < handle
             end
         end
         
+        function [xi,yi,zi,dim] = getSubImageRangeLR( this, loc )
+            [xi,yi,zi,dim] = this.getSubImageRangeHR( loc );
+            zi = zi( 1 :( length(zi) / this.f) );
+        end
+
+        function [xi, yi, zi, dim] = getSubImageRangeHR( this, loc )
+            
+                if( isscalar( loc ))
+                    dim = this.dimXyzList( loc, 1 );
+                    xyz = this.dimXyzList( loc, 2:end );
+                else
+                    dim = loc( 1 );
+                    xyz = loc( 2:end );
+                end
+
+                xib = 1:this.sz2d(1);
+                yib = 1:this.sz2d(2);
+                zib = 1:this.f;
+
+                % add offset 
+                if( isscalar( xyz ))
+                    zib = zib + xyz - 1;
+                end
+
+                switch dim
+                    case 1
+                        xi = zib;
+                        yi = xib;
+                        zi = yib;
+                    case 2 
+                        xi = xib;
+                        yi = zib;
+                        zi = yib;
+                    case 3
+                        xi = xib;
+                        yi = yib;
+                        zi = zib;
+                    otherwise
+                        error( 'invalid dim' );
+                end
+
+                % add offset coming from xyz
+                if( ~isscalar( xyz ))
+                    xi = xi + xyz(1) - 1; 
+                    yi = yi + xyz(2) - 1; 
+                    zi = zi + xyz(3) - 1; 
+                end
+
+        end
+
+        function subIm = getSubImageHR( this, im, loc )
+            [xi,yi,zi] = this.getSubImageRangeHR( loc );
+            subIm = im( xi, yi, zi );
+        end
+        
+        function [ subim, reshapeSz, msk ] = getSubImage( this, im, loc, isLR )
+            % im - the observation
+            % loc - can be a scalar, in which case it is interpreted as an
+            %       index into this object's dimXyzList.
+            %       or a 2-vector that is interpreted as [ dim xyz ]
+            
+            if( exist( 'isLR', 'var' ) && ~isempty( isLR ))
+                isImLr = isLR;
+            else
+                isImLr = this.isLr( im );
+            end
+            if( isImLr )
+                if( isscalar( loc ))
+                    msk = this.planeMaskLRI( loc );
+                else
+                    msk = this.planeMaskLR( loc(1), loc(2:end) );
+                end
+            else
+                if( isscalar( loc ))
+                    msk = this.planeMaskI( loc );
+                else
+                    msk = this.planeMask( loc(1), loc(2:end) );
+                end
+            end
+            
+            reshapeSz = [];
+            
+            [subim ] = ...
+                PatchConstraints.downsampleByMaskDim( im, msk );
+            
+        end
+        
         function msk = planeMaskI( this, i, centered )
             if( ~exist('centered','var'))
                 centered = [];
@@ -590,7 +709,48 @@ classdef PatchConstraints < handle
             msk = this.planeMaskLR( this.dimXyzList(i,2), this.dimXyzList(i,1), this.f, centered );
         end
         
-        function msk = planeMask( this, xyz, n, f, centered )
+        function [ v, rng ] = locToMaskIndices( this, loc, centered  )
+            if( ~exist('centered','var') || isempty( centered ))
+                centered = false;
+            end
+            if( isscalar( loc ))
+                dim = this.dimXyzList( loc, 1 );
+                xyz = this.dimXyzList( loc, 2:end );
+            else
+                dim = loc(1);
+                xyz = loc(2:end);
+            end
+            sz = [this.sz2d this.f];
+            
+            if( isscalar(xyz) )
+                val = xyz;
+            else
+                switch dim
+                    case 1
+                        val = xyz(1);
+                    case 2
+                        val = xyz(2);
+                    case 3
+                        val = xyz(3);
+                    otherwise
+                        error('invalid normal direction');
+                end
+            end
+            
+            if( centered )
+                half = (this.f-1)./2;
+                rng = val-half : val+half; %#ok<BDSCI>
+            else
+                rng = val : val + this.f - 1;
+            end
+            valid = (rng>0) & (rng<=sz(1));
+            rng = rng( valid );
+            N = prod(sz(1:2));
+            
+            v = repmat( reshape(1:N, sz(1:2)), [1 1 nnz(valid)]);
+        end
+        
+        function msk = planeMask( this, n, xyz, f, centered )
             % n is {1,2,3}
         
             sz = this.sz3d;
@@ -617,7 +777,7 @@ classdef PatchConstraints < handle
             
             if( centered )
                 half = (f-1)./2;
-                rng = val-half : val+half;
+                rng = val-half : val+half; %#ok<BDSCI>
             else
                 rng = val : val + f - 1;
             end
@@ -641,7 +801,7 @@ classdef PatchConstraints < handle
             end
         end
         
-        function msk = planeMaskLR( this, xyz, n, f, centered )
+        function msk = planeMaskLR( this, n, xyz, f, centered )
             sz = this.sz3d ./ [1 1 this.f ];
             msk = zeros( sz );
             
@@ -745,7 +905,36 @@ classdef PatchConstraints < handle
             end
         end
         
-    end
+        function [ isLr ] = isLr( this, x )
+            % returns true if the input 'x' is a size consistent with a
+            % low-res patch
+            
+            szLr = this.sz3d ./ [ 1 1 this.f ];
+            isLr = false;
+            if( numel(x) == prod( szLr ))
+               isLr = true;
+            end
+        end
+        
+        function [ im_ds ] = downsampleAlongLoDimHR( im, loc )
+            % [ im_ds ] = downsampleAlong( im, loc )
+            % loc can be scalar ( index into dimXyzList )
+            %         or a vector [ dim xyz ] 
+            
+            if( isscalar( loc ))
+                dim = this.dimXyz( loc, 1 );
+                xyz = this.dimXyz( loc, 2:end );
+            else
+                dim = loc(1);
+                xyz = loc(2:end);
+            end
+            
+            subimHR 
+            
+            im_ds = im;
+        end
+        
+    end % methods
     
     methods( Static )
         
@@ -864,34 +1053,69 @@ classdef PatchConstraints < handle
             patch_ds = reshape( sum( reshape(patch', factor,[]),1), sz2d./[1 factor] )';
         end
 
-        function [ im_ds, reshapeSz, didTranspose ] = downsampleByMaskDim( im, msk, doTp )
-            if( ~exist('doTp','var'))
-                doTp = false;
-            end
+        function [ sz, dim ] = inferSizeFromMask( msk, f )
+             [i,j,k] = ind2sub( size(msk), find(msk) );
+             sz = [ max(i) - min(i) + 1, ...
+                    max(j) - min(j) + 1, ...
+                    max(k) - min(k) + 1, ...
+                  ];
+        end
+        
+        function [ im_ds ] = downsampleByMaskDim( im, msk )
+            is = setdiff( unique( msk ), 0);
+            N = length( is );
+            im_ds = zeros( N, 1 );
             
-            didTranspose = false;
-            
-            [i,j,~]=ind2sub( size(msk), find(msk==1));
-            if( any( i>1 ) )
-                dim = 1;
-            elseif( any( j>1) )
-                dim = 2;
-            else
-                dim = 3;
-            end
-            reshapeSz = size(msk);
-            reshapeSz( dim ) = length( i );
-            im_ds = sum( reshape( im(msk>0), reshapeSz ), dim );
-            %size( im_ds )
-            im_ds = squeeze(im_ds);
-            if( size(im_ds,2) < size(im_ds,1) || doTp )
-               im_ds = im_ds'; 
-               didTranspose = true;
+            for j = 1:N
+                i = is(j);
+                im_ds( j ) = sum( im( msk == i ));
             end
         end
         
-%         function [ im_ds ] = downsampleByMaskGenVec( im, msk )
-%             idxList = unique(msk(msk>0));
-%         end
-    end
+        function [ im_ds, reshapeSz, didTranspose, didDownsample ] = downsampleByMaskDimMaybeWrong( im, msk, doTp, reshapeSz )
+            if( ~exist('doTp','var') || isempty( doTp ) )
+                doTp = false;
+            end
+            
+            if( ~exist( 'reshapeSz', 'var') || isempty (reshapeSz ))
+%                 reshapeSz = size(msk);
+%             else
+                fprintf('infering output size\n');
+                reshapeSz = PatchConstraints.inferSizeFromMask( msk );
+            end
+            reshapeSz
+            
+            didTranspose = false;
+            inds1 = find( msk == 1 );
+            if( nnz( inds1 ) > 1 )
+                [i,j,~]=ind2sub( size(msk), inds1 );
+                if( any( i>1 ) )
+                    dim = 1;
+                elseif( any( j>1) )
+                    dim = 2;
+                else
+                    dim = 3;
+                end
+                didDownsample = true;
+            else
+                [i,j,~]=ind2sub( size(msk), find(msk) );
+                if( length(unique(i)) == 1 )
+                    dim = 1;
+                elseif( length(unique(j)) == 1 )
+                    dim = 2;
+                else
+                    dim = 3;
+                end
+                didDownsample = false;
+            end
+            dim
+            im_ds = sum( reshape( im((msk>0)), reshapeSz ), dim );
+            im_ds = squeeze(im_ds);
+            if( size(im_ds,2) < size(im_ds,1) || doTp )
+                im_ds = im_ds';
+                didTranspose = true;
+            end
+        end
+
+    end % methods( Static )
 end

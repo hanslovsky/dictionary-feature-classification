@@ -20,7 +20,6 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
        useSubset = 0; 
        
        intXfmModelType = '';
-       paramModels;
        stopAfterFitParamIni = 1;
        fitParams = { 'Robust', 'LAR' };
        
@@ -43,11 +42,13 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
     
     methods
         
-        % Constructor
-        % D2d - 
-        % sz  - size of 2d patches
-        % f   - downsampling factor
+        
         function this = Dict2dTo3dSampler( D2d, sz, f, overlappingPatches, scaleByOverlap, comparator )
+            % Constructor
+            % D2d - 
+            % sz  - size of 2d patches
+            % f   - downsampling factor
+            
             this = this@Dict2dTo3d( D2d, sz, f, overlappingPatches, scaleByOverlap );
             if( this.useSubset )
                 fprintf('Computing insersection matrix inverses...');
@@ -63,7 +64,11 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
             this.comparator = comparator;
             
-            this.D2d_downsampled = this.pc.downsample2dDictByDimSlow( this.D2d );
+            % can't use isa here, because isa returns true 
+            % if the argument is a subclass, which is not desired
+            if( strcmp( class( this ), 'Dict2dTo3dSampler')) %#ok<STISA>
+                this.D2d_downsampled = this.pc.downsample2dDictByDimSlow( this.D2d );
+            end
             
             % normalize
             this.D2d_downsampled = bsxfun(  @rdivide, ...
@@ -1555,13 +1560,12 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             dists  = nan( this.numDict, 1 );
             models = {};
             
-            msk = this.pc.planeMaskLRI( i );
-            
-            [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
-            x = [x(:)]';
-            
-            % normlize x
-%             x = x ./ norm( x );
+%             msk = this.pc.planeMaskLRI( i );
+%             [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
+%             x = [x(:)]';
+
+            [x, ~, msk, ~, didTp ] = this.pc.getSubImage( x, i );
+            x = x(:)';
             
             if( numel( x ) == size( this.D2d, 2 ) )
                 D = this.D2d;
@@ -1594,29 +1598,40 @@ classdef Dict2dTo3dSampler < Dict2dTo3d
             end
         end
     
-        function [ dictParams, xhat, dictCost ] = dictParamsLasso( this, xin, loci, params )
+        function [ dictParams, xhat, dictCost, xhatup ] = dictParamsLasso( this, xin, loci, params )
             % uses the spams toolbox's implementation of lasso to estimate
             % a sparse coefficient vector that explains the observation 'x'
-            % at location 'loci' using the 2d dictionary 
+            % at location 'loci' using the 2d dictionary
             
             x = vecToRowCol( xin, 'row');
-            msk = this.pc.planeMaskLRI( loci );
-            
-            [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
+%             msk = this.pc.planeMaskLRI( loci );
+%             [x,~,didTp] = PatchConstraints.downsampleByMaskDim( x(:), msk );
+            [x, ~, ~, ~, ~ ] = this.pc.getSubImage( x, loci );
             x = x(:);
             
+            isLowRes = false;
             if( numel( x ) == size( this.D2d, 2 ) )
                 D = this.D2d;
             else
                 D = this.D2d_downsampled;
+                isLowRes = true;
             end
             
             dictParams = mexLasso( x, D', params );
             if( nargout > 1 )
-               xhat = D' * dictParams;
+                xhat = D' * dictParams;
             end
             if( nargout > 2 )
-               dictCost =  norm( x - xhat );
+                dictCost =  norm( x - xhat );
+            end
+            if( nargout > 3 )
+                if( isLowRes )
+                    xhatup = this.D2d' * dictParams;
+                else
+                    % if the observation is high res, 
+                    % then the current xhat is already high res
+                    xhatup = xhat; 
+                end
             end
         end
            
